@@ -1,5 +1,0 @@
-[tool.pyrefly]
-search-path = ["backend"]
-[tool.vercel]
-entrypoint = "backend.backend.asgi:application"
-
