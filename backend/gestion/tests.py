@@ -1277,6 +1277,77 @@ class ActivationBoutiqueParAdminTests(TestCase):
         self.assertEqual(resp_statut.data['statut'], 'actif')
 
 
+class InitSuperadminCommandTests(TestCase):
+    def test_variables_manquantes_ignore_sans_erreur(self):
+        from io import StringIO
+        from django.core.management import call_command
+        import os
+
+        out = StringIO()
+        env_backup = {k: os.environ.get(k) for k in ['SUPERADMIN_EMAIL', 'SUPERADMIN_PASSWORD', 'SUPERADMIN_USERNAME']}
+        try:
+            os.environ.pop('SUPERADMIN_EMAIL', None)
+            os.environ.pop('SUPERADMIN_PASSWORD', None)
+            call_command('init_superadmin', stdout=out)
+            output = out.getvalue()
+            self.assertIn("Variables SUPERADMIN_EMAIL / SUPERADMIN_PASSWORD non définies", output)
+            self.assertIn("création du super-admin ignorée", output)
+        finally:
+            for k, v in env_backup.items():
+                if v is not None:
+                    os.environ[k] = v
+
+    def test_creation_superadmin_reussie_idempotente_et_securisee(self):
+        from io import StringIO
+        from django.core.management import call_command
+        import os
+
+        out = StringIO()
+        email = "render_super@boutiquestock.tg"
+        raw_password = "SecureSuperPassword2026!"
+
+        env_backup = {k: os.environ.get(k) for k in ['SUPERADMIN_EMAIL', 'SUPERADMIN_PASSWORD']}
+        try:
+            os.environ['SUPERADMIN_EMAIL'] = email
+            os.environ['SUPERADMIN_PASSWORD'] = raw_password
+
+            call_command('init_superadmin', stdout=out)
+            output = out.getvalue()
+            self.assertIn("Compte super-admin créé avec succès.", output)
+            # Sécurité : le mot de passe ne doit JAMAIS apparaître en clair dans la sortie console/logs
+            self.assertNotIn(raw_password, output)
+
+            # Vérification en base de données
+            user = Utilisateur.objects.filter(email=email).first()
+            self.assertIsNotNone(user)
+            self.assertEqual(user.role, 'super_admin')
+            self.assertTrue(user.is_superuser)
+            self.assertTrue(user.is_staff)
+            self.assertTrue(user.check_password(raw_password))
+            self.assertNotEqual(user.password, raw_password)  # Bien haché avec PBKDF2/argon2
+
+            # Test d'idempotence : deuxième exécution sans effet de bord
+            out_second = StringIO()
+            call_command('init_superadmin', stdout=out_second)
+            output_second = out_second.getvalue()
+            self.assertIn("Super-admin déjà existant, aucune action nécessaire.", output_second)
+
+            # Vérification qu'un mot de passe changé manuellement par la suite n'est pas écrasé
+            user.set_password("NouveauMotDePassePerso456!")
+            user.save()
+
+            out_third = StringIO()
+            call_command('init_superadmin', stdout=out_third)
+            self.assertIn("Super-admin déjà existant, aucune action nécessaire.", out_third.getvalue())
+            user.refresh_from_db()
+            self.assertTrue(user.check_password("NouveauMotDePassePerso456!"))
+        finally:
+            for k, v in env_backup.items():
+                if v is not None:
+                    os.environ[k] = v
+
+
+
 
 
 

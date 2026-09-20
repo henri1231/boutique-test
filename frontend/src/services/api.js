@@ -6,7 +6,7 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
 
 // Callback stub conservé pour compatibilité éventuelle
-export const setOnSubscriptionRequired = () => {};
+export const setOnSubscriptionRequired = () => { };
 
 const request = async (endpoint, options = {}) => {
   const token = localStorage.getItem('boutique_access_token');
