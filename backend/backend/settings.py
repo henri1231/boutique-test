@@ -178,3 +178,11 @@ TMONEY_ENV = 'simulation'
 TMONEY_MERCHANT_NUMBER = '90000000' # Remplacer par le numéro marchand officiel Togocom
 TMONEY_API_URL = 'https://api.togocom.tg/tmoney/v1/payment' # Endpoint officiel Togocom une fois convention signée
 TMONEY_API_KEY = '' # Clé d'API fournie par Togocom
+CORS_ALLOWED_ORIGINS = [
+    "https://boutique-test-b5fx.vercel.app",  # remplace par ton vrai lien Vercel
+]
+
+ALLOWED_HOSTS = [
+    "https://boutique-test.onrender.com",  # ton adresse Render
+    ".onrender.com",
+]
