@@ -54,6 +54,42 @@ export const AdminDashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [recherche, setRecherche] = useState('');
   const [filtreAbo, setFiltreAbo] = useState('tous'); // 'tous', 'actif', 'expire', 'suspendu'
+  const [actionEnCoursId, setActionEnCoursId] = useState(null);
+  const [toastMessage, setToastMessage] = useState(null);
+
+  const afficherToast = (msg, type = 'success') => {
+    setToastMessage({ msg, type });
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const handleActiverBoutiqueRapide = async (b) => {
+    setActionEnCoursId(b.id);
+    try {
+      const res = await api.superAdmin.toggleStatutBoutique(b.id, "Validation et activation immédiate du compte demandeur");
+      afficherToast(res.message || `La boutique '${b.nom}' et son compte gérant ont été activés avec succès !`);
+      setBoutiques(prev => prev.map(item => item.id === b.id ? { ...item, compte_actif: true } : item));
+      chargerDonnees();
+    } catch (err) {
+      afficherToast(err.message || "Erreur lors de l'activation", 'danger');
+    } finally {
+      setActionEnCoursId(null);
+    }
+  };
+
+  const handleDesactiverBoutiqueRapide = async (b) => {
+    if (!window.confirm(`Voulez-vous vraiment suspendre la boutique "${b.nom}" ?`)) return;
+    setActionEnCoursId(b.id);
+    try {
+      const res = await api.superAdmin.toggleStatutBoutique(b.id, "Désactivation administrative");
+      afficherToast(res.message || `La boutique '${b.nom}' a été désactivée.`, 'warning');
+      setBoutiques(prev => prev.map(item => item.id === b.id ? { ...item, compte_actif: false } : item));
+      chargerDonnees();
+    } catch (err) {
+      afficherToast(err.message || "Erreur lors de la désactivation", 'danger');
+    } finally {
+      setActionEnCoursId(null);
+    }
+  };
 
   const chargerDonnees = useCallback(async () => {
     setLoading(true);
@@ -82,7 +118,10 @@ export const AdminDashboardPage = () => {
         !recherche ||
         b.nom.toLowerCase().includes(recherche.toLowerCase()) ||
         (b.adresse && b.adresse.toLowerCase().includes(recherche.toLowerCase())) ||
-        (b.telephone && b.telephone.includes(recherche));
+        (b.telephone && b.telephone.includes(recherche)) ||
+        (b.gerant_compte?.username && b.gerant_compte.username.toLowerCase().includes(recherche.toLowerCase())) ||
+        (b.gerant_compte?.email && b.gerant_compte.email.toLowerCase().includes(recherche.toLowerCase())) ||
+        (b.gerant_compte?.nom_complet && b.gerant_compte.nom_complet.toLowerCase().includes(recherche.toLowerCase()));
 
       if (!matchRecherche) return false;
 
@@ -187,21 +226,45 @@ export const AdminDashboardPage = () => {
           <AdminAdministrateursTab toutesBoutiques={boutiques} />
         ) : (
           <>
+        {/* TOAST ALERTE ACTION */}
+        {toastMessage && (
+          <div style={{
+            background: toastMessage.type === 'danger' ? '#ef4444' : toastMessage.type === 'warning' ? '#f59e0b' : '#10b981',
+            color: '#ffffff',
+            padding: '12px 20px',
+            borderRadius: '10px',
+            marginBottom: '20px',
+            fontWeight: '700',
+            fontSize: '0.92rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+            animation: 'fadeIn 0.2s ease'
+          }}>
+            <span>{toastMessage.msg}</span>
+            <button
+              onClick={() => setToastMessage(null)}
+              style={{ background: 'none', border: 'none', color: '#ffffff', cursor: 'pointer', fontWeight: 'bold' }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* EN-TÊTE DASHBOARD BOUTIQUES */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <h1 style={{ fontSize: '1.75rem', fontWeight: '800', color: '#ffffff', letterSpacing: '-0.02em', margin: 0 }}>
-                {isAdministrateur ? "Mes Boutiques Attribuées" : "Supervision des Boutiques"}
+                Gestion & Supervision de Toutes les Boutiques
               </h1>
               <span className="badge badge-gold" style={{ fontSize: '0.75rem' }}>
-                {isAdministrateur ? "Accès Délégué" : "Plateforme Togo"}
+                Plateforme Togo
               </span>
             </div>
             <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginTop: '4px', margin: 0 }}>
-              {isAdministrateur 
-                ? "Consultez, activez et gérez les boutiques qui vous ont été confiées" 
-                : "Contrôle des accès marchands, validation des boutiques et gestion des comptes"}
+              Accès complet à l'ensemble du réseau, validation directe des comptes demandeurs et contrôle des commerces
             </p>
           </div>
 
@@ -358,11 +421,11 @@ export const AdminDashboardPage = () => {
                 <thead>
                   <tr>
                     <th>Boutique</th>
+                    <th>Compte Demandeur (Gérant) & Action d'Activation</th>
                     <th>Adresse & Contact</th>
-                    <th>Équipe</th>
-                    <th>Articles</th>
-                    <th>Statut d'Activation</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
+                    <th>Équipe & Articles</th>
+                    <th>Statut</th>
+                    <th style={{ textAlign: 'right' }}>Détails</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -370,13 +433,13 @@ export const AdminDashboardPage = () => {
                     const isActif = b.compte_actif === true;
 
                     return (
-                      <tr key={b.id} style={{ opacity: isActif ? 1 : 0.85 }}>
+                      <tr key={b.id} style={{ opacity: isActif ? 1 : 0.95 }}>
                         {/* Nom Boutique */}
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <div style={{
-                              width: '38px',
-                              height: '38px',
+                              width: '40px',
+                              height: '40px',
                               borderRadius: '8px',
                               background: isActif ? 'rgba(5, 150, 105, 0.2)' : 'rgba(245, 158, 11, 0.2)',
                               color: isActif ? '#34d399' : '#fbbf24',
@@ -398,6 +461,97 @@ export const AdminDashboardPage = () => {
                           </div>
                         </td>
 
+                        {/* Compte Demandeur (Gérant) avec Bouton Activer juste à côté */}
+                        <td>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '12px',
+                            background: !isActif ? 'rgba(245, 158, 11, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                            border: !isActif ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(255, 255, 255, 0.06)',
+                            padding: '8px 12px',
+                            borderRadius: '8px',
+                            minWidth: '260px'
+                          }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontWeight: '700', fontSize: '0.88rem', color: '#ffffff' }}>
+                                  {b.gerant_compte?.nom_complet || b.gerant_compte?.username || "Gérant non défini"}
+                                </span>
+                                <span className="badge badge-gold" style={{ fontSize: '0.68rem', padding: '1px 6px' }}>
+                                  Demandeur
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '0.76rem', color: '#94a3b8', marginTop: '2px' }}>
+                                ✉️ {b.gerant_compte?.email || b.gerant_compte?.username || "Sans email"}
+                              </div>
+                            </div>
+
+                            {/* LE BOUTON ACTIVER JUSTE À CÔTÉ DU COMPTE DEMANDEUR */}
+                            {!isActif ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleActiverBoutiqueRapide(b);
+                                }}
+                                disabled={actionEnCoursId === b.id}
+                                className="btn btn-sm"
+                                style={{
+                                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                  color: '#ffffff',
+                                  border: 'none',
+                                  padding: '6px 14px',
+                                  borderRadius: '6px',
+                                  fontWeight: '800',
+                                  fontSize: '0.8rem',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  cursor: 'pointer',
+                                  boxShadow: '0 2px 10px rgba(16, 185, 129, 0.45)',
+                                  whiteSpace: 'nowrap',
+                                  flexShrink: 0
+                                }}
+                                title={`Activer le compte de ${b.gerant_compte?.nom_complet || b.nom}`}
+                              >
+                                <CheckCircle size={15} />
+                                <span>{actionEnCoursId === b.id ? "Activation..." : "Activer"}</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDesactiverBoutiqueRapide(b);
+                                }}
+                                disabled={actionEnCoursId === b.id}
+                                className="btn btn-sm"
+                                style={{
+                                  background: 'rgba(239, 68, 68, 0.15)',
+                                  color: '#f87171',
+                                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                                  padding: '4px 10px',
+                                  borderRadius: '6px',
+                                  fontWeight: '600',
+                                  fontSize: '0.74rem',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  cursor: 'pointer',
+                                  whiteSpace: 'nowrap',
+                                  flexShrink: 0
+                                }}
+                                title={`Désactiver / Suspendre la boutique ${b.nom}`}
+                              >
+                                <XCircle size={13} />
+                                <span>{actionEnCoursId === b.id ? "..." : "Désactiver"}</span>
+                              </button>
+                            )}
+                          </div>
+                        </td>
+
                         {/* Adresse & Contact */}
                         <td>
                           <div style={{ fontSize: '0.86rem', color: '#e2e8f0' }}>
@@ -410,19 +564,17 @@ export const AdminDashboardPage = () => {
                           )}
                         </td>
 
-                        {/* Nombre employés */}
+                        {/* Équipe & Articles */}
                         <td>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(255,255,255,0.06)', padding: '4px 10px', borderRadius: '6px', fontSize: '0.82rem' }}>
-                            <Users size={14} style={{ color: '#93c5fd' }} />
-                            <span>{b.nb_employes} membre(s)</span>
-                          </div>
-                        </td>
-
-                        {/* Nombre produits */}
-                        <td>
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.82rem', color: '#cbd5e1' }}>
-                            <Package size={14} style={{ color: '#fbbf24' }} />
-                            <span>{b.nb_produits || 0} articles</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.82rem', color: '#cbd5e1' }}>
+                              <Users size={13} style={{ color: '#93c5fd' }} />
+                              <span>{b.nb_employes} membre(s)</span>
+                            </div>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.82rem', color: '#cbd5e1' }}>
+                              <Package size={13} style={{ color: '#fbbf24' }} />
+                              <span>{b.nb_produits || 0} articles</span>
+                            </div>
                           </div>
                         </td>
 
@@ -445,7 +597,7 @@ export const AdminDashboardPage = () => {
                               gap: '5px'
                             }}>
                               <Clock size={13} />
-                              <span>En attente d'activation</span>
+                              <span>En attente</span>
                             </span>
                           )}
                         </td>
@@ -466,7 +618,7 @@ export const AdminDashboardPage = () => {
                               fontWeight: isActif ? '500' : '700'
                             }}
                           >
-                            <span>{isActif ? "Gérer" : "Examiner & Activer"}</span>
+                            <span>Gérer</span>
                             <ArrowRight size={14} />
                           </button>
                         </td>

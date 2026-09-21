@@ -74,7 +74,7 @@ export const AdminNavbar = ({ activeTab = 'boutiques', onSelectTab }) => {
               style={{ background: activeTab === 'boutiques' ? 'rgba(16, 185, 129, 0.15)' : 'none', border: 'none', cursor: 'pointer', font: 'inherit' }}
             >
               <Store size={17} />
-              <span>{isAdministrateur ? 'Mes Boutiques' : 'Boutiques'}</span>
+              <span>Boutiques</span>
             </button>
 
             {/* Onglet Administrateurs : STRICTEMENT réservé au Super-Administrateur */}

@@ -496,9 +496,39 @@ export const AdminBoutiqueDetailPage = () => {
                     <td>{u.telephone || '—'}</td>
                     <td>
                       {u.role === 'gerant' ? (
-                        <span className="badge badge-gold" style={{ fontSize: '0.72rem' }}>
-                          ★ Gérant
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span className="badge badge-gold" style={{ fontSize: '0.72rem' }}>
+                            ★ Gérant (Demandeur)
+                          </span>
+                          {isSuspendu && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMotifAction("Validation et activation du compte demandeur");
+                                setShowToggleModal(true);
+                              }}
+                              className="btn btn-sm"
+                              style={{
+                                background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                color: '#ffffff',
+                                border: 'none',
+                                padding: '3px 10px',
+                                borderRadius: '5px',
+                                fontWeight: '700',
+                                fontSize: '0.74rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                cursor: 'pointer',
+                                boxShadow: '0 2px 6px rgba(16, 185, 129, 0.4)'
+                              }}
+                              title="Activer la boutique et le compte demandeur"
+                            >
+                              <CheckCircle size={12} />
+                              <span>Activer le compte</span>
+                            </button>
+                          )}
+                        </div>
                       ) : (
                         <span className="badge badge-neutral" style={{ fontSize: '0.72rem' }}>
                           🛒 Employé
