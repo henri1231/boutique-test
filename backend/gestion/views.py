@@ -47,7 +47,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         username = attrs.get(self.username_field)
         if username:
             user_found = Utilisateur.objects.filter(
-                models.Q(username__iexact=username) | models.Q(email__iexact=username)
+                Q(username__iexact=username) | Q(email__iexact=username)
             ).first()
             if user_found:
                 attrs[self.username_field] = user_found.username
