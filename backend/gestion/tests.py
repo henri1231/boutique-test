@@ -1434,6 +1434,72 @@ class GerantModificationProfilTests(TestCase):
         })
         self.assertEqual(resp_new_login.status_code, status.HTTP_200_OK)
 
+    def test_gerant_modifie_nom_utilisateur_succes_et_unicite(self):
+        """
+        Vérifie qu'un gérant peut modifier son nom d'utilisateur (username)
+        et que l'unicité (insensible à la casse) est rigoureusement respectée.
+        """
+        # Créer un autre utilisateur pour tester les collisions
+        Utilisateur.objects.create_user(
+            username="autre_utilisateur",
+            password="AutrePassword123!",
+            email="autre@test.tg",
+            role="vendeur",
+            boutique=self.boutique
+        )
+
+        # 1. Échec si nom d'utilisateur vide
+        resp_empty = self.client_gerant.patch('/api/auth/profil/', {
+            'username': '   '
+        })
+        self.assertEqual(resp_empty.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 2. Échec si nom d'utilisateur déjà pris (exact)
+        resp_taken = self.client_gerant.patch('/api/auth/profil/', {
+            'username': 'autre_utilisateur'
+        })
+        self.assertEqual(resp_taken.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('username', resp_taken.data)
+
+        # 3. Échec si nom d'utilisateur déjà pris (casse différente)
+        resp_taken_case = self.client_gerant.patch('/api/auth/profil/', {
+            'username': 'AUTRE_UTILISATEUR'
+        })
+        self.assertEqual(resp_taken_case.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 4. Succès de la modification du nom d'utilisateur
+        resp_ok = self.client_gerant.patch('/api/auth/profil/', {
+            'username': 'nouveau_gerant_2026'
+        })
+        self.assertEqual(resp_ok.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_ok.data['username'], 'nouveau_gerant_2026')
+
+        self.gerant.refresh_from_db()
+        self.assertEqual(self.gerant.username, 'nouveau_gerant_2026')
+
+        # 5. L'ancien nom d'utilisateur ne permet plus de se connecter
+        client_auth = APIClient()
+        resp_old_auth = client_auth.post('/api/auth/connexion/', {
+            'username': 'gerant_profil',
+            'password': 'AncienPassword123!'
+        })
+        self.assertEqual(resp_old_auth.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # 6. Le nouveau nom d'utilisateur permet de se connecter avec succès
+        resp_new_auth = client_auth.post('/api/auth/connexion/', {
+            'username': 'nouveau_gerant_2026',
+            'password': 'AncienPassword123!'
+        })
+        self.assertEqual(resp_new_auth.status_code, status.HTTP_200_OK)
+        self.assertIn('access', resp_new_auth.data)
+
+        # 7. La consultation du profil retourne bien le nouveau nom d'utilisateur
+        client_auth.credentials(HTTP_AUTHORIZATION=f"Bearer {resp_new_auth.data['access']}")
+        resp_profil = client_auth.get('/api/auth/profil/')
+        self.assertEqual(resp_profil.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_profil.data['username'], 'nouveau_gerant_2026')
+
+
 
 
 

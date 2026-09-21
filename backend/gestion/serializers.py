@@ -56,6 +56,22 @@ class UtilisateurSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(obj.photo_profil.url)
         return obj.photo_profil.url
 
+    def validate_username(self, value):
+        if value is not None:
+            clean_val = str(value).strip()
+            if not clean_val:
+                raise serializers.ValidationError("Le nom d'utilisateur ne peut pas être vide.")
+            if len(clean_val) < 3:
+                raise serializers.ValidationError("Le nom d'utilisateur doit comporter au moins 3 caractères.")
+            instance = getattr(self, 'instance', None)
+            qs = Utilisateur.objects.filter(username__iexact=clean_val)
+            if instance:
+                qs = qs.exclude(pk=instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError("Ce nom d'utilisateur est déjà utilisé par un autre compte.")
+            return clean_val
+        return value
+
     def update(self, instance, validated_data):
         # 1. Gestion du nom complet (ou first_name / last_name)
         nom_complet = self.initial_data.get('nom_complet')
