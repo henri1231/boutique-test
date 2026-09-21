@@ -160,12 +160,12 @@ class InscriptionSerializer(serializers.Serializer):
         return value
 
     def create(self, validated_data):
-        # 1. Créer la boutique avec compte_actif=False (en attente d'activation par l'administrateur)
+        # 1. Créer la boutique avec compte_actif=True (accès gratuit et immédiat sans permission préalable)
         boutique = Boutique.objects.create(
             nom=validated_data['nom_boutique'],
             adresse=validated_data.get('adresse_boutique', ''),
             telephone=validated_data.get('telephone_boutique', ''),
-            compte_actif=False
+            compte_actif=True
         )
 
         # 2. Créer l'utilisateur rattaché

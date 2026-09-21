@@ -55,11 +55,11 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
         utilisateur = self.user
 
-        # VÉRIFICATION DU STATUT DU COMPTE / ACTIVATION PAR L'ADMINISTRATEUR
+        # VÉRIFICATION DU STATUT DU COMPTE / SUSPENSION ÉVENTUELLE PAR L'ADMINISTRATEUR
         if utilisateur.role not in ['super_admin', 'administrateur'] and utilisateur.boutique:
             if not utilisateur.boutique.compte_actif:
                 from rest_framework.exceptions import AuthenticationFailed
-                raise AuthenticationFailed("Votre boutique est actuellement en attente d'activation par l'administrateur de la plateforme.")
+                raise AuthenticationFailed("Votre boutique a été temporairement suspendue ou désactivée par l'administrateur de la plateforme.")
 
         photo_url = None
         if utilisateur.photo_profil:
@@ -102,10 +102,17 @@ class InscriptionView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         utilisateur = serializer.save()
 
+        # Génération immédiate des jetons JWT pour connexion automatique et utilisation directe
+        refresh = RefreshToken.for_user(utilisateur)
+
         return Response({
-            'message': f"Boutique '{utilisateur.boutique.nom}' enregistrée avec succès ! Votre boutique est actuellement en attente d'activation par un administrateur.",
-            'en_attente_activation': True,
+            'message': f"Bienvenue ! Votre boutique '{utilisateur.boutique.nom}' est créée et immédiatement active. Vous pouvez utiliser toutes les fonctionnalités gratuitement.",
+            'en_attente_activation': False,
             'boutique_nom': utilisateur.boutique.nom,
+            'tokens': {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            },
             'utilisateur': {
                 'id': utilisateur.id,
                 'username': utilisateur.username,

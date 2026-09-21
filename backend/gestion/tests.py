@@ -63,7 +63,7 @@ class BoutiqueStockTests(TestCase):
         )
 
     def test_inscription_et_auth(self):
-        """Tester l'inscription d'une nouvelle boutique (créée en attente d'activation)"""
+        """Tester l'inscription d'une nouvelle boutique (créée gratuitement et active immédiatement sans permission admin)"""
         client_anonyme = APIClient()
         data = {
             'nom_boutique': 'Superette Tokoin',
@@ -75,9 +75,11 @@ class BoutiqueStockTests(TestCase):
         }
         response = client_anonyme.post('/api/auth/inscription/', data)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(response.data.get('en_attente_activation'))
+        self.assertFalse(response.data.get('en_attente_activation'))
+        self.assertIn('tokens', response.data)
+        self.assertIn('access', response.data['tokens'])
         boutique_creee = Boutique.objects.get(nom='Superette Tokoin')
-        self.assertFalse(boutique_creee.compte_actif)
+        self.assertTrue(boutique_creee.compte_actif)
 
     def test_liste_produits(self):
         """Tester la récupération des produits de la boutique connectée"""
@@ -138,7 +140,7 @@ class BoutiqueStockTests(TestCase):
     def test_blocage_si_boutique_inactive_ou_en_attente(self):
         """
         Tester le respect de la règle d'activation :
-        Si compte_actif=False (en attente d'activation ou désactivée),
+        Si compte_actif=False (suspendue ou désactivée par un administrateur),
         l'accès aux opérations de stock est bloqué en 403 PermissionDenied.
         """
         self.boutique.compte_actif = False
@@ -147,7 +149,7 @@ class BoutiqueStockTests(TestCase):
         # Accès aux produits bloqué
         response_produits = self.client.get('/api/produits/')
         self.assertEqual(response_produits.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertIn("attente d'activation", str(response_produits.data.get('detail', '')))
+        self.assertIn("suspendue", str(response_produits.data.get('detail', '')))
 
         # Vente bloquée
         response_vente = self.client.post(f'/api/produits/{self.produit.id}/vente/', {'quantite': 1})
@@ -1176,12 +1178,12 @@ class MessageBoutiqueCommunicationTests(TestCase):
 
 class ActivationBoutiqueParAdminTests(TestCase):
     """
-    Tests de validation du cycle d'activation administrative :
-    1. Inscription d'une boutique -> compte_actif=False (en attente d'activation).
-    2. Connexion du gérant bloquée tant que la boutique n'est pas activée (AuthenticationFailed).
-    3. Activation de la boutique par l'administrateur ou super-administrateur (toggle-statut).
-    4. Connexion du gérant débloquée et gestion complète des stocks sans demande de paiement TMoney/Flooz ni 402.
-    5. Statut de la boutique (/api/abonnement/statut/) confirme l'activation permanente.
+    Tests de validation du cycle d'accès gratuit et gestion administrative :
+    1. Inscription d'une boutique -> compte_actif=True (accès gratuit et immédiat sans permission admin).
+    2. Connexion du gérant réussie immédiatement et gestion complète des stocks sans demande de paiement TMoney/Flooz ni 402.
+    3. Possibilité pour l'administrateur de suspendre la boutique (toggle-statut -> False) et vérification du blocage.
+    4. Réactivation par l'administrateur (toggle-statut -> True) et déblocage de l'accès.
+    5. Statut de la boutique (/api/abonnement/statut/) confirme l'accès actif et gratuit.
     """
     def setUp(self):
         self.client_anonyme = APIClient()
@@ -1203,7 +1205,7 @@ class ActivationBoutiqueParAdminTests(TestCase):
         self.client_admin.credentials(HTTP_AUTHORIZATION=f'Bearer {self.admin_token}')
 
     def test_cycle_complet_inscription_attente_et_activation_admin(self):
-        # 1. Inscription d'une nouvelle boutique par un futur gérant
+        # 1. Inscription d'une nouvelle boutique par un gérant -> Active immédiatement
         data_inscription = {
             'nom_boutique': "Boutique du Peuple Lomé",
             'adresse_boutique': "Boulevard du 13 Janvier, Lomé",
@@ -1215,48 +1217,26 @@ class ActivationBoutiqueParAdminTests(TestCase):
         }
         resp_insc = self.client_anonyme.post('/api/auth/inscription/', data_inscription)
         self.assertEqual(resp_insc.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(resp_insc.data.get('en_attente_activation'))
-        self.assertIn("attente d'activation", resp_insc.data['message'])
+        self.assertFalse(resp_insc.data.get('en_attente_activation'))
+        self.assertIn('tokens', resp_insc.data)
+        self.assertIn('access', resp_insc.data['tokens'])
 
-        # Vérification en base de données : compte_actif est False
+        # Vérification en base de données : compte_actif est True dès la création
         boutique = Boutique.objects.get(nom="Boutique du Peuple Lomé")
-        self.assertFalse(boutique.compte_actif)
+        self.assertTrue(boutique.compte_actif)
         self.assertEqual(boutique.abonnements.count(), 0)
 
-        # 2. Tentative de connexion du gérant avant activation administrative -> Bloquée
-        resp_login_avant = self.client_gerant.post('/api/auth/connexion/', {
+        # 2. Connexion immédiate du gérant sans avoir besoin de permission administrateur
+        resp_login = self.client_gerant.post('/api/auth/connexion/', {
             'username': "gerant_peuple",
             'password': "PassSecurise123!"
         })
-        self.assertEqual(resp_login_avant.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertIn("attente d'activation", str(resp_login_avant.data.get('detail', '')))
-
-        # 3. L'administrateur active la boutique via l'API d'administration
-        resp_toggle = self.client_admin.post(f'/api/admin-plateforme/boutiques/{boutique.id}/toggle-statut/', {
-            'motif': "Vérification effectuée et validée par l'administrateur"
-        })
-        self.assertEqual(resp_toggle.status_code, status.HTTP_200_OK)
-        self.assertTrue(resp_toggle.data['compte_actif'])
-
-        boutique.refresh_from_db()
-        self.assertTrue(boutique.compte_actif)
-
-        # Vérification de l'audit log
-        log = JournalActionSuperAdmin.objects.filter(boutique_cible=boutique).first()
-        self.assertIsNotNone(log)
-        self.assertIn("activée", log.description)
-
-        # 4. Connexion du gérant APRÈS activation -> Succès immédiat
-        resp_login_apres = self.client_gerant.post('/api/auth/connexion/', {
-            'username': "gerant_peuple",
-            'password': "PassSecurise123!"
-        })
-        self.assertEqual(resp_login_apres.status_code, status.HTTP_200_OK)
-        self.assertIn('access', resp_login_apres.data)
-        token_gerant = resp_login_apres.data['access']
+        self.assertEqual(resp_login.status_code, status.HTTP_200_OK)
+        self.assertIn('access', resp_login.data)
+        token_gerant = resp_login.data['access']
         self.client_gerant.credentials(HTTP_AUTHORIZATION=f'Bearer {token_gerant}')
 
-        # 5. Création d'un produit et opération de stock sans blocage 402 ni paiement requis
+        # 3. Création immédiate d'un produit et opération de stock (gratuit, sans blocage 402 ni paiement)
         resp_prod = self.client_gerant.post('/api/produits/', {
             'nom': "Sac de Riz 25kg",
             'categorie': "Alimentation",
@@ -1275,11 +1255,37 @@ class ActivationBoutiqueParAdminTests(TestCase):
         })
         self.assertEqual(resp_vente.status_code, status.HTTP_201_CREATED)
 
-        # 6. Consultation du statut boutique (/api/abonnement/statut/)
+        # 4. Consultation du statut boutique (/api/abonnement/statut/) -> Actif
         resp_statut = self.client_gerant.get('/api/abonnement/statut/')
         self.assertEqual(resp_statut.status_code, status.HTTP_200_OK)
         self.assertTrue(resp_statut.data['compte_actif'])
         self.assertEqual(resp_statut.data['statut'], 'actif')
+
+        # 5. L'administrateur peut suspendre la boutique si besoin
+        resp_suspendre = self.client_admin.post(f'/api/admin-plateforme/boutiques/{boutique.id}/toggle-statut/', {
+            'motif': "Suspension administrative temporaire"
+        })
+        self.assertEqual(resp_suspendre.status_code, status.HTTP_200_OK)
+        self.assertFalse(resp_suspendre.data['compte_actif'])
+        boutique.refresh_from_db()
+        self.assertFalse(boutique.compte_actif)
+
+        # Une fois suspendue, les opérations de gestion sont bloquées (403)
+        resp_bloque = self.client_gerant.get('/api/produits/')
+        self.assertEqual(resp_bloque.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 6. Réactivation par l'administrateur
+        resp_reactiver = self.client_admin.post(f'/api/admin-plateforme/boutiques/{boutique.id}/toggle-statut/', {
+            'motif': "Réactivation par l'administrateur"
+        })
+        self.assertEqual(resp_reactiver.status_code, status.HTTP_200_OK)
+        self.assertTrue(resp_reactiver.data['compte_actif'])
+        boutique.refresh_from_db()
+        self.assertTrue(boutique.compte_actif)
+
+        # Les opérations de stock sont à nouveau débloquées
+        resp_debloque = self.client_gerant.get('/api/produits/')
+        self.assertEqual(resp_debloque.status_code, status.HTTP_200_OK)
 
 
 class InitSuperadminCommandTests(TestCase):

@@ -8,7 +8,7 @@ class Boutique(models.Model):
     nom = models.CharField(max_length=200, verbose_name="Nom de la boutique")
     adresse = models.TextField(blank=True, default='', verbose_name="Adresse")
     telephone = models.CharField(max_length=50, blank=True, default='', verbose_name="Téléphone")
-    compte_actif = models.BooleanField(default=False, verbose_name="Compte actif")
+    compte_actif = models.BooleanField(default=True, verbose_name="Compte actif")
     date_creation = models.DateTimeField(auto_now_add=True, verbose_name="Date de création")
 
     class Meta:
@@ -21,8 +21,8 @@ class Boutique(models.Model):
 
     def est_abonnement_actif(self):
         """
-        L'accès aux opérations de la boutique est conditionné par l'activation
-        du compte par l'administrateur de la plateforme (compte_actif == True).
+        L'accès aux opérations de la boutique est gratuit et immédiat dès la création.
+        L'accès peut être suspendu par un administrateur (compte_actif == False).
         """
         return self.compte_actif
 
@@ -32,9 +32,9 @@ class Boutique(models.Model):
     def statut_abonnement_detail(self):
         return {
             'actif': self.compte_actif,
-            'statut': 'actif' if self.compte_actif else 'en_attente_activation',
+            'statut': 'actif' if self.compte_actif else 'suspendu',
             'compte_actif': self.compte_actif,
-            'message': "Boutique validée et active" if self.compte_actif else "En attente d'activation par l'administrateur"
+            'message': "Boutique active (accès gratuit et illimité)" if self.compte_actif else "Boutique suspendue par l'administrateur"
         }
 
 

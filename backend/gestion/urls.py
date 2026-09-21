@@ -2,17 +2,30 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from views import (
-    InscriptionView, ConnexionView, ProfilView,
-    ProduitViewSet, NotificationViewSet,
-    abonnement_statut, abonnement_payer, abonnement_payer_flooz, abonnement_payer_tmoney,
-    abonnement_confirmer, abonnement_simuler_expiration,
-    historique_mouvements, statistiques_boutique, resume_financier,
-    recu_vente, employes_view,
-    AdminConnexionView, admin_statistiques_globales, AdminBoutiqueViewSet,
-    admin_modifier_utilisateur, admin_journal_actions, superadmin_mon_compte,
-    AdminAdministrateurViewSet, MessageBoutiqueViewSet
-)
+try:
+    from views import (
+        InscriptionView, ConnexionView, ProfilView,
+        ProduitViewSet, NotificationViewSet,
+        abonnement_statut, abonnement_payer, abonnement_payer_flooz, abonnement_payer_tmoney,
+        abonnement_confirmer, abonnement_simuler_expiration,
+        historique_mouvements, statistiques_boutique, resume_financier,
+        recu_vente, employes_view,
+        AdminConnexionView, admin_statistiques_globales, AdminBoutiqueViewSet,
+        admin_modifier_utilisateur, admin_journal_actions, superadmin_mon_compte,
+        AdminAdministrateurViewSet, MessageBoutiqueViewSet
+    )
+except (ImportError, ModuleNotFoundError):
+    from gestion.views import (
+        InscriptionView, ConnexionView, ProfilView,
+        ProduitViewSet, NotificationViewSet,
+        abonnement_statut, abonnement_payer, abonnement_payer_flooz, abonnement_payer_tmoney,
+        abonnement_confirmer, abonnement_simuler_expiration,
+        historique_mouvements, statistiques_boutique, resume_financier,
+        recu_vente, employes_view,
+        AdminConnexionView, admin_statistiques_globales, AdminBoutiqueViewSet,
+        admin_modifier_utilisateur, admin_journal_actions, superadmin_mon_compte,
+        AdminAdministrateurViewSet, MessageBoutiqueViewSet
+    )
 
 router = DefaultRouter()
 router.register(r'produits', ProduitViewSet, basename='produit')

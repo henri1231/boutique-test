@@ -24,10 +24,10 @@ class EstSuperAdmin(permissions.BasePermission):
 
 class EstAbonnementActif(permissions.BasePermission):
     """
-    Vérifie que l'utilisateur est authentifié et que sa boutique a été activée
-    par l'administrateur de la plateforme (compte_actif == True).
+    Vérifie que l'utilisateur est authentifié et que sa boutique est active (compte_actif == True).
+    Les boutiques créées sont actives par défaut et gratuites.
     """
-    message = "Boutique en attente d'activation par l'administrateur ou suspendue."
+    message = "Boutique temporairement suspendue par l'administrateur."
 
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
@@ -41,11 +41,10 @@ class EstAbonnementActif(permissions.BasePermission):
         if not boutique:
             raise exceptions.PermissionDenied("Aucune boutique n'est associée à ce compte utilisateur.")
 
-        # VÉRIFICATION DE L'ACTIVATION DU COMPTE PAR L'ADMINISTRATEUR
+        # VÉRIFICATION DU STATUT DE LA BOUTIQUE
         if not boutique.compte_actif:
             raise exceptions.PermissionDenied(
-                "Votre boutique est actuellement en attente d'activation par l'administrateur de la plateforme. "
-                "L'accès sera disponible dès la validation de votre compte."
+                "Votre boutique a été temporairement suspendue ou désactivée par l'administrateur de la plateforme."
             )
 
         return True
