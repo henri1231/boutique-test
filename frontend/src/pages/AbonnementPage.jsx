@@ -121,7 +121,7 @@ export const AbonnementPage = () => {
           <div style={{ flex: 1, minWidth: '260px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginBottom: '8px' }}>
               <span style={{
-                background: compteActif ? '#22c55e' : '#f59e0b',
+                background: compteActif ? '#22c55e' : '#ef4444',
                 color: '#ffffff',
                 padding: '4px 12px',
                 borderRadius: '999px',
@@ -130,7 +130,7 @@ export const AbonnementPage = () => {
                 letterSpacing: '0.04em',
                 textTransform: 'uppercase'
               }}>
-                {compteActif ? "Boutique Active" : "En attente d'activation"}
+                {compteActif ? "Boutique Active (Gratuite)" : "Boutique Suspendue"}
               </span>
 
               <span style={{ fontSize: '0.85rem', color: 'rgba(255, 255, 255, 0.8)' }}>
@@ -140,14 +140,14 @@ export const AbonnementPage = () => {
 
             <h2 style={{ fontSize: '1.35rem', fontWeight: '800', marginBottom: '8px', color: '#ffffff' }}>
               {compteActif 
-                ? "Accès complet activé et approuvé" 
-                : "Validation en cours par un administrateur"}
+                ? "Accès complet et gratuit activé" 
+                : "Boutique temporairement suspendue"}
             </h2>
 
             <p style={{ fontSize: '0.9rem', color: 'rgba(255, 255, 255, 0.9)', lineHeight: 1.5, maxWidth: '640px' }}>
               {compteActif
-                ? "Votre boutique a été formellement validée par l'administrateur de la plateforme. Vous pouvez gérer vos stocks, enregistrer des ventes, imprimer des reçus et communiquer avec vos employés sans aucune restriction."
-                : "Votre boutique est actuellement examinée par l'administrateur de la plateforme. Dès que l'administrateur valide votre compte, l'ensemble des modules sera immédiatement débloqué. Aucun paiement mobile n'est requis."}
+                ? "Votre boutique bénéficie d'un accès complet et gratuit. Vous pouvez gérer vos stocks, enregistrer des ventes, imprimer des reçus et communiquer avec vos employés sans aucune restriction ni permission requise."
+                : "Votre boutique a été temporairement suspendue par l'administrateur de la plateforme. Veuillez contacter le support administratif pour la réactivation."}
             </p>
           </div>
         </div>

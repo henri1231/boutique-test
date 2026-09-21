@@ -118,8 +118,8 @@ export const Navbar = () => {
                     <CheckCircle size={10} /> Active
                   </span>
                 ) : (
-                  <span className="badge" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontSize: '0.65rem', padding: '2px 6px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                    <Clock size={10} /> En attente
+                  <span className="badge" style={{ background: '#fee2e2', color: '#b91c1c', border: '1px solid #fca5a5', fontSize: '0.65rem', padding: '2px 6px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                    <AlertTriangle size={10} /> Suspendue
                   </span>
                 )}
               </NavLink>

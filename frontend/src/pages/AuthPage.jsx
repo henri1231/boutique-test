@@ -138,33 +138,33 @@ export const AuthPage = ({ initialTab = 'connexion' }) => {
                 width: '64px',
                 height: '64px',
                 borderRadius: '50%',
-                background: 'linear-gradient(135deg, #fef3c7, #fde68a)',
-                color: '#b45309',
+                background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)',
+                color: '#15803d',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 margin: '0 auto 16px auto',
-                boxShadow: '0 4px 12px rgba(245, 158, 11, 0.2)'
+                boxShadow: '0 4px 12px rgba(22, 163, 74, 0.2)'
               }}>
-                <Clock size={34} />
+                <CheckCircle size={34} />
               </div>
 
               <h2 style={{ fontSize: '1.35rem', fontWeight: '800', color: '#1e293b', marginBottom: '8px' }}>
-                Boutique enregistrée avec succès !
+                Boutique créée avec succès !
               </h2>
 
               <div style={{
                 display: 'inline-block',
-                background: '#fffbeb',
-                color: '#b45309',
+                background: '#f0fdf4',
+                color: '#15803d',
                 padding: '4px 12px',
                 borderRadius: '999px',
                 fontSize: '0.82rem',
                 fontWeight: '700',
-                border: '1px solid #fde68a',
+                border: '1px solid #bbf7d0',
                 marginBottom: '16px'
               }}>
-                ⏳ En attente d'activation par un administrateur
+                ✅ Accès gratuit et immédiat débloqué
               </div>
 
               <div style={{
@@ -183,8 +183,8 @@ export const AuthPage = ({ initialTab = 'connexion' }) => {
                 <p style={{ margin: '0 0 10px 0', color: '#334155' }}>
                   <strong>Identifiant gérant :</strong> {inscriptionReussie.username}
                 </p>
-                <p style={{ margin: 0, color: '#64748b', fontSize: '0.82rem' }}>
-                  Votre boutique a bien été enregistrée. Un administrateur de la plateforme doit examiner et activer votre boutique avant votre première connexion. Vous recevrez l'accès complet dès son approbation.
+                <p style={{ margin: 0, color: '#15803d', fontSize: '0.84rem', fontWeight: '600' }}>
+                  Votre boutique est immédiatement active ! Vous pouvez utiliser gratuitement toutes les fonctionnalités du site sans attendre de validation.
                 </p>
               </div>
 
@@ -193,13 +193,10 @@ export const AuthPage = ({ initialTab = 'connexion' }) => {
                 className="btn btn-primary btn-lg"
                 style={{ width: '100%' }}
                 onClick={() => {
-                  setInscriptionReussie(null);
-                  setTab('connexion');
-                  setLoginUsername(inscriptionReussie.username);
-                  setLoginPassword('');
+                  navigate('/');
                 }}
               >
-                Aller à la page de connexion
+                Accéder directement à ma boutique
               </button>
             </div>
           ) : (
