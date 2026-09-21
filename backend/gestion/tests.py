@@ -417,7 +417,7 @@ class SuperAdminTests(TestCase):
             'password': 'passer123gerant'
         })
         self.assertEqual(resp_login_fail.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertIn("attente d'activation", str(resp_login_fail.data))
+        self.assertIn("suspendue", str(resp_login_fail.data))
 
         # 3. Réactiver la boutique
         resp_reactiver = self.client_admin.post(
