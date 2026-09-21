@@ -30,6 +30,9 @@ export const AuthProvider = ({ children }) => {
     try {
       const profil = await api.auth.profil();
       setUser(profil);
+      try {
+        localStorage.setItem('boutique_user', JSON.stringify(profil));
+      } catch (e) {}
       if (profil.boutique_detail) {
         setSubscription(profil.boutique_detail.statut_abonnement);
       }

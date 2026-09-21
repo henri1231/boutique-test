@@ -43,7 +43,14 @@ const request = async (endpoint, options = {}) => {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      const message = errorData.erreur || errorData.detail || Object.values(errorData)[0] || `Erreur ${response.status}`;
+      let message = errorData.erreur || errorData.detail;
+      if (!message && Object.values(errorData).length > 0) {
+        const firstVal = Object.values(errorData)[0];
+        message = Array.isArray(firstVal) ? firstVal[0] : firstVal;
+      }
+      if (!message) {
+        message = `Erreur ${response.status}`;
+      }
       const err = new Error(typeof message === 'string' ? message : JSON.stringify(message));
       err.status = response.status;
       err.data = errorData;

@@ -151,9 +151,21 @@ export const MonComptePage = () => {
     setErreur('');
     setSucces('');
 
+    const cleanUsername = username.trim();
+    if (!cleanUsername) {
+      setErreur("Le nom d'utilisateur ne peut pas être vide.");
+      setUpdatingInfo(false);
+      return;
+    }
+    if (cleanUsername.length < 3) {
+      setErreur("Le nom d'utilisateur doit comporter au moins 3 caractères.");
+      setUpdatingInfo(false);
+      return;
+    }
+
     try {
       const payload = {
-        username: username.trim(),
+        username: cleanUsername,
         first_name: firstName.trim(),
         last_name: lastName.trim(),
         telephone: telephone.trim(),
@@ -161,7 +173,7 @@ export const MonComptePage = () => {
       };
       await api.auth.updateProfil(payload);
       await refreshUser();
-      setSucces("Vos coordonnées personnelles ont été mises à jour avec succès !");
+      setSucces("Vos informations et nom d'utilisateur ont été mis à jour avec succès !");
     } catch (err) {
       setErreur(err.message || "Erreur lors de la mise à jour des coordonnées.");
     } finally {
@@ -445,17 +457,23 @@ export const MonComptePage = () => {
         <form onSubmit={handleSaveInfo}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '20px' }}>
             <div className="form-group">
-              <label className="form-label" style={{ fontWeight: '700' }}>Nom d'utilisateur (Identifiant)</label>
+              <label className="form-label" style={{ fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>Nom d'utilisateur (Identifiant)</span>
+                <span style={{ fontSize: '0.72rem', color: 'var(--primary-700)', fontWeight: '600', background: 'var(--primary-50)', padding: '2px 8px', borderRadius: '4px' }}>
+                  Modifiable
+                </span>
+              </label>
               <input
                 type="text"
                 className="form-input"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Ex: gerant_lome"
+                minLength={3}
                 required
               />
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px', display: 'block' }}>
-                Sert d'identifiant pour vous connecter à la boutique.
+                Votre identifiant unique pour vous connecter à la boutique.
               </span>
             </div>
 
