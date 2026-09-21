@@ -130,7 +130,19 @@ class ProfilView(generics.RetrieveUpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         kwargs['partial'] = True
-        return super().update(request, *args, **kwargs)
+        response = super().update(request, *args, **kwargs)
+        # Si le mot de passe a été modifié, générer de nouveaux jetons JWT
+        nouveau_mdp = request.data.get('nouveau_mot_de_passe')
+        ancien_mdp = request.data.get('ancien_mot_de_passe')
+        if nouveau_mdp and ancien_mdp:
+            refresh = RefreshToken.for_user(self.request.user)
+            response.data['tokens'] = {
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            }
+            response.data['mot_de_passe_modifie'] = True
+            response.data['message'] = "Mot de passe et coordonnées mis à jour avec succès !"
+        return response
 
     def perform_update(self, serializer):
         # Option de suppression explicite de la photo de profil
@@ -737,13 +749,9 @@ class AdminConnexionView(generics.GenericAPIView):
 def admin_statistiques_globales(request):
     """
     GET /api/admin-plateforme/statistiques/
-    Compteurs pour le tableau de bord Super-Admin (toutes boutiques) ou Administrateur (ses boutiques).
+    Compteurs pour le tableau de bord Super-Admin et Administrateur (toutes les boutiques).
     """
-    user = request.user
-    if user.role == 'administrateur':
-        boutiques = user.boutiques_gerees.all()
-    else:
-        boutiques = Boutique.objects.all()
+    boutiques = Boutique.objects.all()
 
     total_boutiques = boutiques.count()
     boutiques_actives = boutiques.filter(compte_actif=True).count()
@@ -767,10 +775,10 @@ def admin_statistiques_globales(request):
 
 class AdminBoutiqueViewSet(viewsets.ModelViewSet):
     """
-    Gestion des boutiques par le Super-Administrateur ou par un Administrateur (pour ses boutiques assignées).
+    Gestion de toutes les boutiques par le Super-Administrateur ou par un Administrateur.
     GET /api/admin-plateforme/boutiques/ : Liste avec recherche et filtres
-    GET /api/admin-plateforme/boutiques/{id}/ : Fiche détaillée (403 si non attribuée à l'administrateur)
-    PUT /api/admin-plateforme/boutiques/{id}/ : Mise à jour nom/adresse/téléphone (403 si non attribuée)
+    GET /api/admin-plateforme/boutiques/{id}/ : Fiche détaillée
+    PUT /api/admin-plateforme/boutiques/{id}/ : Mise à jour nom/adresse/téléphone
     POST /api/admin-plateforme/boutiques/{id}/toggle-statut/ : Activer / Désactiver la boutique
     """
     permission_classes = [IsAuthenticated, EstSuperAdminOuAdministrateur]
@@ -783,11 +791,7 @@ class AdminBoutiqueViewSet(viewsets.ModelViewSet):
         return AdminBoutiqueListSerializer
 
     def get_queryset(self):
-        user = self.request.user
-        if user.role == 'administrateur':
-            qs = user.boutiques_gerees.all().order_by('-date_creation')
-        else:
-            qs = Boutique.objects.all().order_by('-date_creation')
+        qs = Boutique.objects.all().order_by('-date_creation')
 
         recherche = self.request.query_params.get('recherche', '').strip()
         statut_abo = self.request.query_params.get('statut_abo', '').strip() # 'actif', 'expire'
@@ -808,16 +812,9 @@ class AdminBoutiqueViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_object(self):
-        # Vérification stricte d'attribution pour l'administrateur (renvoie 403 Forbidden au lieu de 404 si la boutique existe)
         lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
         pk = self.kwargs.get(lookup_url_kwarg)
         boutique = generics.get_object_or_404(Boutique, pk=pk)
-
-        user = self.request.user
-        if user.role == 'administrateur':
-            if not user.boutiques_gerees.filter(pk=boutique.pk).exists():
-                raise PermissionDenied("Accès refusé : Cette boutique ne vous a pas été attribuée.")
-
         self.check_object_permissions(self.request, boutique)
         return boutique
 
@@ -883,10 +880,8 @@ def admin_modifier_utilisateur(request, pk):
     """
     user = generics.get_object_or_404(Utilisateur, pk=pk)
 
-    # Vérification des droits pour l'administrateur
+    # Vérification des droits pour l'administrateur : ne peut pas modifier d'autres administrateurs ou le super-admin
     if request.user.role == 'administrateur':
-        if not user.boutique or not request.user.boutiques_gerees.filter(pk=user.boutique.pk).exists():
-            raise PermissionDenied("Accès refusé : Cet utilisateur n'appartient pas à l'une de vos boutiques attribuées.")
         if user.role in ['super_admin', 'administrateur']:
             raise PermissionDenied("Action interdite : Vous ne pouvez pas modifier un compte administrateur.")
 
@@ -925,9 +920,6 @@ def admin_journal_actions(request):
     """
     boutique_id = request.query_params.get('boutique')
     qs = JournalActionSuperAdmin.objects.all().order_by('-date_action')
-
-    if request.user.role == 'administrateur':
-        qs = qs.filter(boutique_cible__in=request.user.boutiques_gerees.all())
 
     if boutique_id:
         qs = qs.filter(boutique_cible_id=boutique_id)

@@ -929,26 +929,31 @@ class AdministrateurRoleTests(TestCase):
         })
         self.assertEqual(resp_post.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_administrateur_ne_voit_que_ses_boutiques_assignees(self):
+    def test_administrateur_voit_toutes_les_boutiques(self):
         resp = self.client_admin.get('/api/admin-plateforme/boutiques/')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         # Handle paginated or unpaginated response
         results = resp.data.get('results', resp.data) if isinstance(resp.data, dict) else resp.data
         ids = [b['id'] for b in results]
         self.assertIn(self.boutique1.id, ids)
-        self.assertNotIn(self.boutique2.id, ids)
+        self.assertIn(self.boutique2.id, ids)
+        # Vérifier aussi la présence de gerant_compte (compte demandeur)
+        b1_data = next(b for b in results if b['id'] == self.boutique1.id)
+        self.assertIn('gerant_compte', b1_data)
 
-    def test_administrateur_acces_boutique_non_assignee_renvoie_403(self):
-        # Boutique 2 n'est pas assignée à admin_koffi -> 403 Forbidden
+    def test_administrateur_peut_acceder_et_gerer_toutes_les_boutiques(self):
+        # L'administrateur a désormais accès et peut gérer toutes les boutiques
         resp_detail = self.client_admin.get(f'/api/admin-plateforme/boutiques/{self.boutique2.id}/')
-        self.assertEqual(resp_detail.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp_detail.status_code, status.HTTP_200_OK)
 
         resp_put = self.client_admin.put(f'/api/admin-plateforme/boutiques/{self.boutique2.id}/', {
-            'nom': 'Piratage Nom',
-            'adresse': 'Lomé',
+            'nom': 'Boutique Agoè Mise à Jour',
+            'adresse': 'Lomé Agoè',
             'telephone': '+228 90 00 00 00'
         })
-        self.assertEqual(resp_put.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp_put.status_code, status.HTTP_200_OK)
+        self.boutique2.refresh_from_db()
+        self.assertEqual(self.boutique2.nom, 'Boutique Agoè Mise à Jour')
 
     def test_administrateur_peut_modifier_boutique_assignee_avec_journal(self):
         # Modification de boutique1 autorisée
@@ -969,8 +974,8 @@ class AdministrateurRoleTests(TestCase):
         self.assertIsNotNone(journal_entry)
         self.assertIn("[Administrateur: admin_koffi]", journal_entry.description)
 
-    def test_administrateur_peut_toggle_statut_boutique_assignee(self):
-        # L'administrateur peut désactiver/activer sa boutique attribuée
+    def test_administrateur_peut_toggle_statut_toutes_les_boutiques(self):
+        # L'administrateur peut désactiver/activer n'importe quelle boutique
         self.assertTrue(self.boutique1.compte_actif)
         resp = self.client_admin.post(f'/api/admin-plateforme/boutiques/{self.boutique1.id}/toggle-statut/', {
             'motif': 'Suspension temporaire pour inventaire'
@@ -979,11 +984,11 @@ class AdministrateurRoleTests(TestCase):
         self.boutique1.refresh_from_db()
         self.assertFalse(self.boutique1.compte_actif)
 
-        # L'administrateur NE peut PAS modifier le statut d'une boutique non attribuée (403)
+        # L'administrateur peut aussi modifier le statut de boutique2 (200 OK)
         resp_unassigned = self.client_admin.post(f'/api/admin-plateforme/boutiques/{self.boutique2.id}/toggle-statut/', {
-            'motif': 'Tentative illégale'
+            'motif': 'Validation autorisée'
         })
-        self.assertEqual(resp_unassigned.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp_unassigned.status_code, status.HTTP_200_OK)
 
     def test_administrateur_mon_compte_et_invalidation_tokens(self):
         # Consultation de mon compte
@@ -1345,6 +1350,90 @@ class InitSuperadminCommandTests(TestCase):
             for k, v in env_backup.items():
                 if v is not None:
                     os.environ[k] = v
+
+
+class GerantModificationProfilTests(TestCase):
+    def setUp(self):
+        self.boutique = Boutique.objects.create(
+            nom="Boutique Test Lomé",
+            adresse="Lomé Centre",
+            telephone="+228 90 11 22 33",
+            compte_actif=True
+        )
+        self.gerant = Utilisateur.objects.create_user(
+            username="gerant_profil",
+            password="AncienPassword123!",
+            email="gerant@profil.tg",
+            role="gerant",
+            boutique=self.boutique,
+            telephone="+228 91 22 33 44",
+            first_name="Koffi",
+            last_name="Test"
+        )
+        self.client_gerant = APIClient()
+        resp_login = self.client_gerant.post('/api/auth/connexion/', {
+            'username': 'gerant_profil',
+            'password': 'AncienPassword123!'
+        })
+        self.assertEqual(resp_login.status_code, status.HTTP_200_OK)
+        self.token = resp_login.data['access']
+        self.client_gerant.credentials(HTTP_AUTHORIZATION=f'Bearer {self.token}')
+
+    def test_gerant_modifie_numero_et_coordonnees(self):
+        resp = self.client_gerant.patch('/api/auth/profil/', {
+            'telephone': '+228 99 88 77 66',
+            'first_name': 'Koffi Modifié',
+            'last_name': 'Nouveau',
+            'email': 'nouveau_koffi@profil.tg',
+            'boutique_nom': 'Boutique Rénovée Lomé',
+            'boutique_telephone': '+228 22 00 11 22'
+        })
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.gerant.refresh_from_db()
+        self.assertEqual(self.gerant.telephone, '+228 99 88 77 66')
+        self.assertEqual(self.gerant.first_name, 'Koffi Modifié')
+        self.assertEqual(self.gerant.email, 'nouveau_koffi@profil.tg')
+
+        self.boutique.refresh_from_db()
+        self.assertEqual(self.boutique.nom, 'Boutique Rénovée Lomé')
+        self.assertEqual(self.boutique.telephone, '+228 22 00 11 22')
+
+    def test_gerant_modifie_mot_de_passe_succes_et_echec(self):
+        # 1. Échec si ancien mot de passe incorrect
+        resp_fail = self.client_gerant.patch('/api/auth/profil/', {
+            'ancien_mot_de_passe': 'MauvaisPassword!',
+            'nouveau_mot_de_passe': 'NouveauSecret2026!',
+            'confirmer_mot_de_passe': 'NouveauSecret2026!'
+        })
+        self.assertEqual(resp_fail.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('ancien_mot_de_passe', resp_fail.data)
+
+        # 2. Échec si confirmation différente
+        resp_mismatch = self.client_gerant.patch('/api/auth/profil/', {
+            'ancien_mot_de_passe': 'AncienPassword123!',
+            'nouveau_mot_de_passe': 'NouveauSecret2026!',
+            'confirmer_mot_de_passe': 'AutreSecret2026!'
+        })
+        self.assertEqual(resp_mismatch.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # 3. Succès avec les bons mots de passe
+        resp_ok = self.client_gerant.patch('/api/auth/profil/', {
+            'ancien_mot_de_passe': 'AncienPassword123!',
+            'nouveau_mot_de_passe': 'NouveauSecret2026!',
+            'confirmer_mot_de_passe': 'NouveauSecret2026!'
+        })
+        self.assertEqual(resp_ok.status_code, status.HTTP_200_OK)
+        self.gerant.refresh_from_db()
+        self.assertTrue(self.gerant.check_password('NouveauSecret2026!'))
+
+        # 4. Connexion avec le nouveau mot de passe
+        client_new = APIClient()
+        resp_new_login = client_new.post('/api/auth/connexion/', {
+            'username': 'gerant_profil',
+            'password': 'NouveauSecret2026!'
+        })
+        self.assertEqual(resp_new_login.status_code, status.HTTP_200_OK)
+
 
 
 

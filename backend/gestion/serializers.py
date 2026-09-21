@@ -21,14 +21,26 @@ class UtilisateurSerializer(serializers.ModelSerializer):
     nom_complet = serializers.SerializerMethodField()
     photo_profil_url = serializers.SerializerMethodField()
 
+    # Champs pour la modification du mot de passe
+    ancien_mot_de_passe = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    nouveau_mot_de_passe = serializers.CharField(write_only=True, required=False, allow_blank=True, min_length=6)
+    confirmer_mot_de_passe = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    # Champs pour la modification des informations de la boutique (pour le gérant)
+    boutique_nom = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    boutique_adresse = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    boutique_telephone = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
     class Meta:
         model = Utilisateur
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'nom_complet',
             'role', 'telephone', 'photo_profil', 'photo_profil_url',
-            'boutique', 'boutique_detail'
+            'boutique', 'boutique_detail',
+            'ancien_mot_de_passe', 'nouveau_mot_de_passe', 'confirmer_mot_de_passe',
+            'boutique_nom', 'boutique_adresse', 'boutique_telephone'
         ]
-        read_only_fields = ['id', 'username', 'boutique', 'role']
+        read_only_fields = ['id', 'boutique', 'role']
         extra_kwargs = {
             'photo_profil': {'write_only': True, 'required': False}
         }
@@ -43,6 +55,74 @@ class UtilisateurSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(obj.photo_profil.url)
         return obj.photo_profil.url
+
+    def update(self, instance, validated_data):
+        # 1. Gestion du nom complet (ou first_name / last_name)
+        nom_complet = self.initial_data.get('nom_complet')
+        if nom_complet is not None:
+            parts = str(nom_complet).strip().split(' ', 1)
+            instance.first_name = parts[0]
+            instance.last_name = parts[1] if len(parts) > 1 else ''
+
+        # 2. Gestion du nom d'utilisateur (username)
+        nouveau_username = validated_data.pop('username', None)
+        if nouveau_username and nouveau_username.strip() != instance.username:
+            clean_username = nouveau_username.strip()
+            if Utilisateur.objects.filter(username__iexact=clean_username).exclude(pk=instance.pk).exists():
+                raise serializers.ValidationError({'username': "Ce nom d'utilisateur est déjà utilisé par un autre compte."})
+            instance.username = clean_username
+
+        # 3. Modification sécurisée du mot de passe
+        ancien_mdp = validated_data.pop('ancien_mot_de_passe', None)
+        nouveau_mdp = validated_data.pop('nouveau_mot_de_passe', None)
+        confirmer_mdp = validated_data.pop('confirmer_mot_de_passe', None)
+
+        if nouveau_mdp or ancien_mdp or confirmer_mdp:
+            if not ancien_mdp:
+                raise serializers.ValidationError({
+                    'ancien_mot_de_passe': "Veuillez saisir votre mot de passe actuel pour valider la modification."
+                })
+            if not instance.check_password(ancien_mdp):
+                raise serializers.ValidationError({
+                    'ancien_mot_de_passe': "Le mot de passe actuel est incorrect."
+                })
+            if not nouveau_mdp or len(nouveau_mdp) < 6:
+                raise serializers.ValidationError({
+                    'nouveau_mot_de_passe': "Le nouveau mot de passe doit comporter au moins 6 caractères."
+                })
+            if nouveau_mdp != confirmer_mdp:
+                raise serializers.ValidationError({
+                    'confirmer_mot_de_passe': "La confirmation ne correspond pas au nouveau mot de passe."
+                })
+            instance.set_password(nouveau_mdp)
+            instance.date_modification_mdp = timezone.now()
+
+        # 4. Modification des informations de la boutique (si gérant)
+        boutique_nom = validated_data.pop('boutique_nom', None)
+        boutique_adresse = validated_data.pop('boutique_adresse', None)
+        boutique_telephone = validated_data.pop('boutique_telephone', None)
+
+        if instance.boutique and (instance.role == 'gerant' or instance.is_superuser):
+            b = instance.boutique
+            b_updated = False
+            if boutique_nom and boutique_nom.strip():
+                b.nom = boutique_nom.strip()
+                b_updated = True
+            if boutique_adresse is not None:
+                b.adresse = boutique_adresse.strip()
+                b_updated = True
+            if boutique_telephone is not None:
+                b.telephone = boutique_telephone.strip()
+                b_updated = True
+            if b_updated:
+                b.save()
+
+        # 5. Application des autres champs standards (email, telephone, first_name, last_name, photo_profil)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        instance.save()
+        return instance
 
 
 class InscriptionSerializer(serializers.Serializer):
@@ -288,12 +368,14 @@ class AdminBoutiqueListSerializer(serializers.ModelSerializer):
     nb_employes = serializers.SerializerMethodField()
     statut_abonnement = serializers.SerializerMethodField()
     nb_produits = serializers.SerializerMethodField()
+    gerant_compte = serializers.SerializerMethodField()
 
     class Meta:
         model = Boutique
         fields = [
             'id', 'nom', 'adresse', 'telephone', 'compte_actif',
-            'date_creation', 'nb_employes', 'statut_abonnement', 'nb_produits'
+            'date_creation', 'nb_employes', 'statut_abonnement', 'nb_produits',
+            'gerant_compte'
         ]
 
     def get_nb_employes(self, obj):
@@ -305,26 +387,56 @@ class AdminBoutiqueListSerializer(serializers.ModelSerializer):
     def get_nb_produits(self, obj):
         return obj.produits.count()
 
+    def get_gerant_compte(self, obj):
+        gerant = obj.utilisateurs.filter(role='gerant').first() or obj.utilisateurs.first()
+        if not gerant:
+            return None
+        return {
+            'id': gerant.id,
+            'username': gerant.username,
+            'nom_complet': gerant.get_full_name() or gerant.username,
+            'email': gerant.email,
+            'telephone': gerant.telephone,
+            'role': gerant.role,
+            'date_joined': gerant.date_joined,
+        }
+
 
 class AdminBoutiqueDetailSerializer(serializers.ModelSerializer):
     """
-    Sérialiseur détaillé d'une boutique pour le Super-Admin.
+    Sérialiseur détaillé d'une boutique pour le Super-Admin et l'Administrateur.
     Inclut les utilisateurs/employés, l'historique des abonnements, et les statistiques d'activité.
     """
     employes = serializers.SerializerMethodField()
     abonnements = serializers.SerializerMethodField()
     activite_resume = serializers.SerializerMethodField()
     statut_abonnement = serializers.SerializerMethodField()
+    gerant_compte = serializers.SerializerMethodField()
 
     class Meta:
         model = Boutique
         fields = [
             'id', 'nom', 'adresse', 'telephone', 'compte_actif', 'date_creation',
-            'statut_abonnement', 'employes', 'abonnements', 'activite_resume'
+            'statut_abonnement', 'employes', 'abonnements', 'activite_resume',
+            'gerant_compte'
         ]
 
     def get_statut_abonnement(self, obj):
         return obj.statut_abonnement_detail()
+
+    def get_gerant_compte(self, obj):
+        gerant = obj.utilisateurs.filter(role='gerant').first() or obj.utilisateurs.first()
+        if not gerant:
+            return None
+        return {
+            'id': gerant.id,
+            'username': gerant.username,
+            'nom_complet': gerant.get_full_name() or gerant.username,
+            'email': gerant.email,
+            'telephone': gerant.telephone,
+            'role': gerant.role,
+            'date_joined': gerant.date_joined,
+        }
 
     def get_employes(self, obj):
         utilisateurs = obj.utilisateurs.all().order_by('-date_joined')
