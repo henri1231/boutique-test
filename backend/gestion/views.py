@@ -44,6 +44,14 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     Bloque immédiatement la connexion si la boutique a été suspendue par le super-admin.
     """
     def validate(self, attrs):
+        username = attrs.get(self.username_field)
+        if username:
+            user_found = Utilisateur.objects.filter(
+                models.Q(username__iexact=username) | models.Q(email__iexact=username)
+            ).first()
+            if user_found:
+                attrs[self.username_field] = user_found.username
+
         data = super().validate(attrs)
         utilisateur = self.user
 
@@ -685,8 +693,8 @@ class AdminConnexionView(generics.GenericAPIView):
         if not username_or_email or not password:
             return Response({'erreur': "Veuillez fournir l'identifiant et le mot de passe."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Recherche par username ou email
-        user = Utilisateur.objects.filter(Q(username=username_or_email) | Q(email=username_or_email)).first()
+        # Recherche par username ou email (insensible à la casse)
+        user = Utilisateur.objects.filter(Q(username__iexact=username_or_email) | Q(email__iexact=username_or_email)).first()
         if not user or not user.check_password(password):
             return Response({'erreur': "Identifiants administrateur invalides."}, status=status.HTTP_401_UNAUTHORIZED)
 

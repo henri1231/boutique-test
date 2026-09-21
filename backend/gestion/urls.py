@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from views import (
+from .views import (
     InscriptionView, ConnexionView, ProfilView,
     ProduitViewSet, NotificationViewSet,
     abonnement_statut, abonnement_payer, abonnement_payer_flooz, abonnement_payer_tmoney,

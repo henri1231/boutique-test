@@ -47,11 +47,11 @@ class Command(BaseCommand):
                         break
         else:
             if not email:
-                email = "admin@boutiquestock.tg"
+                email = "henritolake228@gmail.com"
             if not username:
-                username = email.split('@')[0]
+                username = "henritolake228@gmail.com"
             if not password:
-                raise CommandError("L'argument --password est requis en mode --noinput.")
+                password = "Imenes73"
 
         if not email or not username or not password:
             raise CommandError("L'email, le nom d'utilisateur et le mot de passe sont obligatoires.")
