@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { X, MinusCircle, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { X, MinusCircle, AlertTriangle, CheckCircle2, ShoppingCart } from 'lucide-react';
 
-export const ModalVente = ({ produit, onClose, onSuccess }) => {
+export const ModalVente = ({ produit, onClose, onSuccess, onAjouterAuPanier }) => {
   const { setNotificationCount } = useAuth();
   const [quantite, setQuantite] = useState(1);
   const [prixUnitaire, setPrixUnitaire] = useState(produit?.prix_vente || 0);
@@ -190,17 +190,33 @@ export const ModalVente = ({ produit, onClose, onSuccess }) => {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '10px' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             <button type="button" onClick={onClose} className="btn btn-outline" style={{ flex: 1 }}>
               Annuler
             </button>
+            {onAjouterAuPanier && (
+              <button 
+                type="button" 
+                onClick={() => {
+                  onAjouterAuPanier(produit, quantiteNum, Number(prixUnitaire));
+                  onClose();
+                }}
+                className="btn btn-outline"
+                disabled={isStockInsuffisant || quantiteNum <= 0}
+                style={{ flex: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                title="Ajouter au ticket multi-articles"
+              >
+                <ShoppingCart size={16} />
+                <span>+ Au panier</span>
+              </button>
+            )}
             <button 
               type="submit" 
               className="btn btn-gold" 
               disabled={loading || isStockInsuffisant || quantiteNum <= 0}
               style={{ flex: 2, fontWeight: '700' }}
             >
-              {loading ? "Enregistrement..." : "Valider la vente (− Stock)"}
+              {loading ? "Enregistrement..." : "Vente directe (− Stock)"}
             </button>
           </div>
         </form>

@@ -130,6 +130,16 @@ export const api = {
   // Ventes & Reçus
   ventes: {
     getRecu: (id) => request(`/ventes/${id}/recu/`),
+    creerPanier: (data) =>
+      request('/ventes/panier/', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+  },
+
+  // Achats & Bons d'approvisionnement
+  achats: {
+    getRecu: (id) => request(`/achats/${id}/recu/`),
   },
 
   // Notifications & Alertes Rupture

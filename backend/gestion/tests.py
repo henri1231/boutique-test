@@ -1506,6 +1506,97 @@ class GerantModificationProfilTests(TestCase):
         self.assertEqual(resp_profil.data['username'], 'nouveau_gerant_2026')
 
 
+class PanierMultiArticlesTests(APITestCase):
+    def setUp(self):
+        self.boutique = Boutique.objects.create(nom="Boutique Panier Test", compte_actif=True)
+        self.gerant = Utilisateur.objects.create_user(
+            username='gerant_panier',
+            email='gerant_panier@test.tg',
+            password='Password123!',
+            role='gerant',
+            boutique=self.boutique
+        )
+        self.employe = Utilisateur.objects.create_user(
+            username='employe_panier',
+            email='employe_panier@test.tg',
+            password='Password123!',
+            role='employe',
+            boutique=self.boutique
+        )
+        self.produit1 = Produit.objects.create(
+            boutique=self.boutique,
+            nom="Huile Mayor 1L",
+            categorie="Alimentation",
+            prix_achat=1000,
+            prix_vente=1400,
+            quantite_stock=10,
+            seuil_alerte=2
+        )
+        self.produit2 = Produit.objects.create(
+            boutique=self.boutique,
+            nom="Riz Jasmin 5kg",
+            categorie="Alimentation",
+            prix_achat=3000,
+            prix_vente=4000,
+            quantite_stock=5,
+            seuil_alerte=2
+        )
+        self.client_gerant = APIClient()
+        self.client_gerant.force_authenticate(user=self.gerant)
+
+        self.client_employe = APIClient()
+        self.client_employe.force_authenticate(user=self.employe)
+
+    def test_vente_panier_multi_articles_succes(self):
+        payload = {
+            'articles': [
+                {'produit_id': self.produit1.id, 'quantite': 2, 'prix_unitaire': 1400},
+                {'produit_id': self.produit2.id, 'quantite': 1, 'prix_unitaire': 4000},
+            ],
+            'client_nom': 'Client Test',
+            'mode_paiement': 'Espèces'
+        }
+        res = self.client_gerant.post('/api/ventes/panier/', payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertIn('recu', res.data)
+        recu = res.data['recu']
+        self.assertEqual(recu['nombre_articles'], 2)
+        self.assertEqual(recu['quantite_totale'], 3)
+        self.assertEqual(float(recu['total']), 6800.0)
+
+        # Vérifier que les stocks ont diminué
+        self.produit1.refresh_from_db()
+        self.produit2.refresh_from_db()
+        self.assertEqual(self.produit1.quantite_stock, 8)
+        self.assertEqual(self.produit2.quantite_stock, 4)
+
+        # Vérifier que le endpoint GET /api/ventes/{id}/recu/ retourne bien les 2 articles
+        vente_id = res.data['ventes'][0]['id']
+        res_recu = self.client_employe.get(f'/api/ventes/{vente_id}/recu/')
+        self.assertEqual(res_recu.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_recu.data['articles']), 2)
+
+    def test_vente_panier_par_employe(self):
+        payload = {
+            'articles': [
+                {'produit_id': self.produit1.id, 'quantite': 1, 'prix_unitaire': 1400},
+            ],
+            'client_nom': 'Client Employé'
+        }
+        res = self.client_employe.post('/api/ventes/panier/', payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+    def test_vente_panier_stock_insuffisant_rejete(self):
+        payload = {
+            'articles': [
+                {'produit_id': self.produit2.id, 'quantite': 10},
+            ]
+        }
+        res = self.client_gerant.post('/api/ventes/panier/', payload, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('Stock insuffisant', res.data['erreur'])
+
+
 
 
 

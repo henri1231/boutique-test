@@ -6,6 +6,7 @@ export const ModalAchat = ({ produit, onClose, onSuccess }) => {
   const [quantite, setQuantite] = useState(5);
   const [prixUnitaire, setPrixUnitaire] = useState(produit?.prix_achat || 0);
   const [fournisseur, setFournisseur] = useState('');
+  const [genererRecu, setGenererRecu] = useState(true);
   const [loading, setLoading] = useState(false);
   const [erreur, setErreur] = useState('');
 
@@ -29,6 +30,9 @@ export const ModalAchat = ({ produit, onClose, onSuccess }) => {
         prix_unitaire: Number(prixUnitaire),
         fournisseur: fournisseur.trim() || 'Fournisseur Comptoir',
       });
+      if (genererRecu && res.recu) {
+        res.afficherRecu = true;
+      }
       onSuccess(res);
       onClose();
     } catch (err) {
@@ -140,7 +144,7 @@ export const ModalAchat = ({ produit, onClose, onSuccess }) => {
             padding: '14px',
             borderRadius: 'var(--radius-md)',
             border: '1px solid var(--surface-border)',
-            marginBottom: '20px',
+            marginBottom: '16px',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center'
@@ -154,6 +158,19 @@ export const ModalAchat = ({ produit, onClose, onSuccess }) => {
             <div style={{ fontSize: '1.35rem', fontWeight: '800', color: 'var(--primary-800)', fontFamily: 'var(--font-display)' }}>
               {total.toLocaleString('fr-FR')} FCFA
             </div>
+          </div>
+
+          <div style={{ marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input
+              type="checkbox"
+              id="chk-recu-achat"
+              checked={genererRecu}
+              onChange={(e) => setGenererRecu(e.target.checked)}
+              style={{ width: '16px', height: '16px', accentColor: 'var(--primary-600)', cursor: 'pointer' }}
+            />
+            <label htmlFor="chk-recu-achat" style={{ fontSize: '0.84rem', color: 'var(--text-main)', cursor: 'pointer' }}>
+              Afficher et enregistrer le bon/reçu d'achat après confirmation
+            </label>
           </div>
 
           <div style={{ display: 'flex', gap: '10px' }}>

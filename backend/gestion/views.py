@@ -7,6 +7,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
+import uuid
 from django.db import transaction
 from django.db.models import Sum, F, Q
 from django.utils import timezone
@@ -18,7 +19,7 @@ from .serializers import (
     BoutiqueSerializer, UtilisateurSerializer, InscriptionSerializer,
     ProduitSerializer, AchatSerializer, VenteSerializer,
     AbonnementSerializer, NotificationSerializer,
-    RecuVenteSerializer, EmployeSerializer, EmployeCreateSerializer,
+    RecuVenteSerializer, RecuAchatSerializer, EmployeSerializer, EmployeCreateSerializer,
     AdminBoutiqueListSerializer, AdminBoutiqueDetailSerializer,
     AdminBoutiqueUpdateSerializer, AdminUtilisateurEditSerializer,
     AdminUtilisateurListSerializer, JournalActionSuperAdminSerializer,
@@ -230,17 +231,23 @@ class ProduitViewSet(viewsets.ModelViewSet):
             produit.prix_achat = prix_unitaire
             produit.save()
 
+            suffix = uuid.uuid4().hex[:6].upper()
+            date_str = timezone.now().strftime('%Y%m%d')
+            numero_recu = f"ACH-{date_str}-{suffix}"
+
             achat = Achat.objects.create(
                 produit=produit,
                 quantite=quantite,
                 prix_unitaire=prix_unitaire,
-                fournisseur=fournisseur
+                fournisseur=fournisseur,
+                numero_recu=numero_recu
             )
 
         return Response({
             'message': f"Achat enregistré : +{quantite} unités ajoutées à '{produit.nom}'. Nouveau stock: {produit.quantite_stock}.",
             'produit': ProduitSerializer(produit, context={'request': request}).data,
-            'achat': AchatSerializer(achat).data
+            'achat': AchatSerializer(achat).data,
+            'recu': RecuAchatSerializer(achat).data
         }, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'], url_path='vente')
@@ -280,12 +287,17 @@ class ProduitViewSet(viewsets.ModelViewSet):
             produit.quantite_stock -= quantite
             produit.save()
 
+            suffix = uuid.uuid4().hex[:6].upper()
+            date_str = timezone.now().strftime('%Y%m%d')
+            numero_recu = f"REC-{date_str}-{suffix}"
+
             vente = Vente.objects.create(
                 produit=produit,
                 quantite=quantite,
                 prix_unitaire=prix_unitaire,
                 prix_achat_unitaire=produit.prix_achat,
-                utilisateur=request.user
+                utilisateur=request.user,
+                numero_recu=numero_recu
             )
 
             # RÈGLE MÉTIER : Déclenchement automatique de l'alerte de rupture proche
@@ -445,6 +457,7 @@ def recu_vente(request, pk):
     """
     GET /api/ventes/{id}/recu/
     Retourne les informations du reçu pour une vente donnée (format ticket de caisse).
+    Supporte les reçus mono-article et multi-articles.
     Accessible au gérant et à l'employé.
     """
     boutique = getattr(request.user, 'boutique', None)
@@ -456,6 +469,158 @@ def recu_vente(request, pk):
         return Response({'erreur': "Vente introuvable."}, status=status.HTTP_404_NOT_FOUND)
 
     return Response(RecuVenteSerializer(vente).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, EstAbonnementActif])
+def panier_vente(request):
+    """
+    POST /api/ventes/panier/
+    Enregistre l'achat/vente de plusieurs articles sur un seul et même reçu.
+    Accessible au propriétaire (gérant) ainsi qu'aux employés.
+    Body:
+    {
+        "articles": [
+            {"produit_id": 1, "quantite": 2, "prix_unitaire": 4000},
+            {"produit_id": 3, "quantite": 1, "prix_unitaire": 750}
+        ],
+        "client_nom": "Client Comptoir",
+        "mode_paiement": "Espèces"
+    }
+    """
+    boutique = getattr(request.user, 'boutique', None)
+    if not boutique:
+        return Response({'erreur': "Aucune boutique rattachée à cet utilisateur."}, status=status.HTTP_400_BAD_REQUEST)
+
+    articles_data = request.data.get('articles', [])
+    if not articles_data or not isinstance(articles_data, list):
+        return Response({'erreur': "Veuillez fournir au moins un article dans le panier."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # 1. Validation de chaque article
+    items_to_process = []
+    produits_map = {}
+
+    for idx, item in enumerate(articles_data):
+        p_id = item.get('produit_id') or item.get('id')
+        if not p_id:
+            return Response({'erreur': f"L'article n°{idx+1} n'a pas d'identifiant produit valide."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            quantite = int(item.get('quantite', 0))
+            if quantite <= 0:
+                return Response({'erreur': f"La quantité de l'article n°{idx+1} doit être supérieure à 0."}, status=status.HTTP_400_BAD_REQUEST)
+        except (ValueError, TypeError):
+            return Response({'erreur': f"Quantité invalide pour l'article n°{idx+1}."}, status=status.HTTP_400_BAD_REQUEST)
+
+        produit = Produit.objects.filter(id=p_id, boutique=boutique).first()
+        if not produit:
+            return Response({'erreur': f"Produit n°{p_id} introuvable dans votre boutique."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            prix_u = Decimal(str(item.get('prix_unitaire', produit.prix_vente)))
+            if prix_u < 0:
+                prix_u = produit.prix_vente
+        except (ValueError, TypeError, Exception):
+            prix_u = produit.prix_vente
+
+        produits_map[p_id] = produit
+        items_to_process.append({
+            'produit': produit,
+            'quantite': quantite,
+            'prix_unitaire': prix_u
+        })
+
+    # 2. Vérification agrégée des stocks
+    total_qty_per_product = {}
+    for item in items_to_process:
+        pid = item['produit'].id
+        total_qty_per_product[pid] = total_qty_per_product.get(pid, 0) + item['quantite']
+
+    for pid, qty_demandee in total_qty_per_product.items():
+        prod = produits_map[pid]
+        if prod.quantite_stock < qty_demandee:
+            return Response({
+                'erreur': f"Stock insuffisant pour '{prod.nom}'. Disponible : {prod.quantite_stock}, demandé dans le panier : {qty_demandee}."
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+    # 3. Génération du numéro de reçu commun
+    date_now = timezone.now()
+    suffix = uuid.uuid4().hex[:6].upper()
+    numero_recu = f"REC-{date_now.strftime('%Y%m%d')}-{suffix}"
+
+    ventes_creees = []
+    notifications_alerte = []
+
+    # 4. Transaction atomique
+    with transaction.atomic():
+        for item in items_to_process:
+            prod = item['produit']
+            q = item['quantite']
+            pu = item['prix_unitaire']
+
+            prod.quantite_stock -= q
+            prod.save()
+
+            vente = Vente.objects.create(
+                produit=prod,
+                quantite=q,
+                prix_unitaire=pu,
+                prix_achat_unitaire=prod.prix_achat,
+                utilisateur=request.user,
+                numero_recu=numero_recu
+            )
+            ventes_creees.append(vente)
+
+            # Notification si seuil de rupture atteint
+            if prod.quantite_stock <= prod.seuil_alerte:
+                msg = (
+                    f"⚠️ Alerte Rupture Proche : Le stock de '{prod.nom}' "
+                    f"est tombé à {prod.quantite_stock} unité(s) "
+                    f"(seuil d'alerte configuré à {prod.seuil_alerte}). "
+                    f"Pensez à passer commande auprès de votre fournisseur."
+                )
+                notif = Notification.objects.create(
+                    boutique=boutique,
+                    produit=prod,
+                    type='rupture_stock',
+                    message=msg
+                )
+                notifications_alerte.append(notif)
+
+    premiere_vente = ventes_creees[0]
+    recu_data = RecuVenteSerializer(premiere_vente).data
+
+    # Enrichir les métadonnées optionnelles
+    recu_data['client_nom'] = request.data.get('client_nom', '') or 'Client Comptoir'
+    recu_data['mode_paiement'] = request.data.get('mode_paiement', '') or 'Espèces'
+
+    return Response({
+        'message': f"Achat de {len(ventes_creees)} article(s) enregistré avec succès sur le reçu {numero_recu} !",
+        'numero_recu': numero_recu,
+        'recu': recu_data,
+        'ventes': VenteSerializer(ventes_creees, many=True).data,
+        'alerte_rupture': len(notifications_alerte) > 0,
+        'nb_alertes': len(notifications_alerte)
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def recu_achat(request, pk):
+    """
+    GET /api/achats/{id}/recu/
+    Retourne les informations du reçu/bon d'approvisionnement pour un achat donné.
+    Accessible au gérant et aux employés.
+    """
+    boutique = getattr(request.user, 'boutique', None)
+    if not boutique:
+        return Response({'erreur': "Aucune boutique rattachée."}, status=status.HTTP_400_BAD_REQUEST)
+
+    achat = Achat.objects.filter(id=pk, produit__boutique=boutique).first()
+    if not achat:
+        return Response({'erreur': "Achat introuvable."}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(RecuAchatSerializer(achat).data)
 
 
 @api_view(['GET', 'POST'])

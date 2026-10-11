@@ -219,7 +219,7 @@ class AchatSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Achat
-        fields = ['id', 'produit', 'produit_nom', 'quantite', 'prix_unitaire', 'fournisseur', 'total', 'date']
+        fields = ['id', 'produit', 'produit_nom', 'quantite', 'prix_unitaire', 'fournisseur', 'numero_recu', 'total', 'date']
         read_only_fields = ['id', 'total', 'date']
 
 
@@ -236,7 +236,7 @@ class VenteSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'produit', 'produit_nom', 'quantite', 'prix_unitaire',
             'prix_achat_unitaire', 'cout_achat_total', 'benefice',
-            'utilisateur', 'vendeur_nom', 'total', 'date'
+            'utilisateur', 'vendeur_nom', 'numero_recu', 'total', 'date'
         ]
         read_only_fields = ['id', 'prix_achat_unitaire', 'cout_achat_total', 'benefice', 'utilisateur', 'vendeur_nom', 'total', 'date']
 
@@ -244,23 +244,42 @@ class VenteSerializer(serializers.ModelSerializer):
 class RecuVenteSerializer(serializers.ModelSerializer):
     """
     Format standardisé pour l'affichage et l'impression de ticket de caisse / reçu client.
+    Supporte les ventes individuelles et les paniers multi-articles.
     """
     numero_recu = serializers.SerializerMethodField()
     boutique = serializers.SerializerMethodField()
-    produit_nom = serializers.CharField(source='produit.nom', read_only=True)
+    produit_nom = serializers.SerializerMethodField()
     vendeur_nom = serializers.SerializerMethodField()
     date_formatee = serializers.SerializerMethodField()
-    total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    total = serializers.SerializerMethodField()
+    articles = serializers.SerializerMethodField()
+    nombre_articles = serializers.SerializerMethodField()
+    quantite_totale = serializers.SerializerMethodField()
 
     class Meta:
         model = Vente
         fields = [
             'id', 'numero_recu', 'date', 'date_formatee', 'boutique',
             'produit', 'produit_nom', 'quantite', 'prix_unitaire', 'total',
-            'utilisateur', 'vendeur_nom'
+            'utilisateur', 'vendeur_nom', 'articles', 'nombre_articles', 'quantite_totale'
         ]
 
+    def _get_ventes_recu(self, obj):
+        if getattr(obj, '_cached_ventes_recu', None) is not None:
+            return obj._cached_ventes_recu
+        if obj.numero_recu:
+            ventes = list(Vente.objects.filter(
+                produit__boutique=obj.produit.boutique,
+                numero_recu=obj.numero_recu
+            ).select_related('produit').order_by('id'))
+            obj._cached_ventes_recu = ventes
+            return ventes
+        obj._cached_ventes_recu = [obj]
+        return [obj]
+
     def get_numero_recu(self, obj):
+        if obj.numero_recu:
+            return obj.numero_recu
         date_str = obj.date.strftime('%Y%m%d') if obj.date else '00000000'
         return f"REC-{date_str}-{obj.id:04d}"
 
@@ -281,6 +300,110 @@ class RecuVenteSerializer(serializers.ModelSerializer):
         if not obj.date:
             return ''
         return obj.date.strftime('%d/%m/%Y à %H:%M')
+
+    def get_articles(self, obj):
+        ventes = self._get_ventes_recu(obj)
+        return [
+            {
+                'id': v.id,
+                'produit_id': v.produit.id,
+                'produit_nom': v.produit.nom,
+                'quantite': v.quantite,
+                'prix_unitaire': str(v.prix_unitaire),
+                'total': str(v.total),
+            }
+            for v in ventes
+        ]
+
+    def get_nombre_articles(self, obj):
+        return len(self._get_ventes_recu(obj))
+
+    def get_quantite_totale(self, obj):
+        return sum(v.quantite for v in self._get_ventes_recu(obj))
+
+    def get_total(self, obj):
+        return str(sum(v.total for v in self._get_ventes_recu(obj)))
+
+    def get_produit_nom(self, obj):
+        ventes = self._get_ventes_recu(obj)
+        if len(ventes) > 1:
+            return f"{len(ventes)} articles ({ventes[0].produit.nom}, ...)"
+        return obj.produit.nom
+
+
+class RecuAchatSerializer(serializers.ModelSerializer):
+    """
+    Format standardisé pour le reçu / bon d'approvisionnement en stock.
+    """
+    numero_recu = serializers.SerializerMethodField()
+    boutique = serializers.SerializerMethodField()
+    produit_nom = serializers.CharField(source='produit.nom', read_only=True)
+    date_formatee = serializers.SerializerMethodField()
+    total = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    articles = serializers.SerializerMethodField()
+    nombre_articles = serializers.SerializerMethodField()
+    quantite_totale = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Achat
+        fields = [
+            'id', 'numero_recu', 'date', 'date_formatee', 'boutique',
+            'produit', 'produit_nom', 'quantite', 'prix_unitaire', 'total',
+            'fournisseur', 'articles', 'nombre_articles', 'quantite_totale'
+        ]
+
+    def _get_achats_recu(self, obj):
+        if getattr(obj, '_cached_achats_recu', None) is not None:
+            return obj._cached_achats_recu
+        if obj.numero_recu:
+            achats = list(Achat.objects.filter(
+                produit__boutique=obj.produit.boutique,
+                numero_recu=obj.numero_recu
+            ).select_related('produit').order_by('id'))
+            obj._cached_achats_recu = achats
+            return achats
+        obj._cached_achats_recu = [obj]
+        return [obj]
+
+    def get_numero_recu(self, obj):
+        if obj.numero_recu:
+            return obj.numero_recu
+        date_str = obj.date.strftime('%Y%m%d') if obj.date else '00000000'
+        return f"ACH-{date_str}-{obj.id:04d}"
+
+    def get_boutique(self, obj):
+        b = obj.produit.boutique
+        return {
+            'nom': b.nom,
+            'adresse': b.adresse or 'Lomé, Togo',
+            'telephone': b.telephone or ''
+        }
+
+    def get_date_formatee(self, obj):
+        if not obj.date:
+            return ''
+        return obj.date.strftime('%d/%m/%Y à %H:%M')
+
+    def get_articles(self, obj):
+        achats = self._get_achats_recu(obj)
+        return [
+            {
+                'id': a.id,
+                'produit_id': a.produit.id,
+                'produit_nom': a.produit.nom,
+                'quantite': a.quantite,
+                'prix_unitaire': str(a.prix_unitaire),
+                'total': str(a.total),
+                'fournisseur': a.fournisseur,
+            }
+            for a in achats
+        ]
+
+    def get_nombre_articles(self, obj):
+        return len(self._get_achats_recu(obj))
+
+    def get_quantite_totale(self, obj):
+        return sum(a.quantite for a in self._get_achats_recu(obj))
 
 
 class AbonnementSerializer(serializers.ModelSerializer):

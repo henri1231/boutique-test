@@ -3,6 +3,7 @@ import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { ModalAchat } from '../components/ModalAchat';
 import { ModalVente } from '../components/ModalVente';
+import { ModalPanierVente } from '../components/ModalPanierVente';
 import { ModalProduit } from '../components/ModalProduit';
 import { RecuVente } from '../components/RecuVente';
 import { AbonnementBanner } from '../components/AbonnementBanner';
@@ -20,7 +21,9 @@ import {
   Filter,
   Check,
   RefreshCw,
-  UserCheck
+  UserCheck,
+  Receipt,
+  X
 } from 'lucide-react';
 
 export const StockPage = () => {
@@ -32,12 +35,16 @@ export const StockPage = () => {
   const [categorieFiltre, setCategorieFiltre] = useState('toutes');
   const [filtreRuptureSeulement, setFiltreRuptureSeulement] = useState(false);
 
-  // Modales
+  // Modales & Panier
   const [produitPourAchat, setProduitPourAchat] = useState(null);
   const [produitPourVente, setProduitPourVente] = useState(null);
   const [produitPourEdition, setProduitPourEdition] = useState(null);
   const [modalNouveauProduit, setModalNouveauProduit] = useState(false);
   const [recuVente, setRecuVente] = useState(null);
+
+  // Panier pour encaissement multi-articles
+  const [panierArticles, setPanierArticles] = useState([]);
+  const [modalPanier, setModalPanier] = useState(false);
 
   // Notification toast
   const [toast, setToast] = useState(null);
@@ -69,6 +76,9 @@ export const StockPage = () => {
 
   const handleSuccesAchat = (res) => {
     afficherToast(res.message || "Approvisionnement enregistré avec succès !");
+    if (res.afficherRecu && res.recu) {
+      setRecuVente(res.recu);
+    }
     chargerDonnees();
   };
 
@@ -105,22 +115,89 @@ export const StockPage = () => {
     }
   };
 
+  // Gestion du panier multi-articles
+  const handleAjouterAuPanier = (produit, quantite = 1, prixUnitaire = null) => {
+    if (produit.quantite_stock <= 0) {
+      afficherToast(`Article '${produit.nom}' épuisé.`, 'danger');
+      return;
+    }
+
+    setPanierArticles((prev) => {
+      const existant = prev.find((item) => item.produit.id === produit.id);
+      if (existant) {
+        if (existant.quantite + quantite > produit.quantite_stock) {
+          afficherToast(`Stock max atteint pour '${produit.nom}' (${produit.quantite_stock} en stock).`, 'danger');
+          return prev;
+        }
+        afficherToast(`'${produit.nom}' : quantité portée à ${existant.quantite + quantite} au ticket.`);
+        return prev.map((item) =>
+          item.produit.id === produit.id
+            ? { ...item, quantite: item.quantite + quantite }
+            : item
+        );
+      }
+      afficherToast(`'${produit.nom}' ajouté au ticket multi-articles.`);
+      return [
+        ...prev,
+        {
+          produit,
+          quantite,
+          prixUnitaire: prixUnitaire !== null ? prixUnitaire : Number(produit.prix_vente || 0),
+        },
+      ];
+    });
+  };
+
+  const handleSuccesPanier = (res) => {
+    afficherToast(res.message || "Vente multi-articles enregistrée avec succès !");
+    setPanierArticles([]);
+    if (res.recu) {
+      setRecuVente(res.recu);
+    }
+    chargerDonnees();
+  };
+
+  const totalPanier = useMemo(() => {
+    return panierArticles.reduce((acc, item) => acc + (item.quantite * item.prixUnitaire), 0);
+  }, [panierArticles]);
+
+  // Fonction utilitaire de normalisation sans accent pour la recherche
+  const normaliserTexte = (str) =>
+    (str || '')
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+
   // Liste unique des catégories
   const categories = useMemo(() => {
-    const setCat = new Set(produits.map((p) => p.categorie).filter(Boolean));
+    const setCat = new Set(produits.map((p) => (p.categorie || '').trim()).filter(Boolean));
     return ['toutes', ...Array.from(setCat)];
   }, [produits]);
 
-  // Filtrage
+  // Filtrage robuste avec support des accents, casse et recherche multi-mots
   const produitsFiltres = useMemo(() => {
+    const qNorm = normaliserTexte(recherche);
+    const motsCles = qNorm ? qNorm.split(/\s+/).filter(Boolean) : [];
+
     return produits.filter((p) => {
-      const correspondRecherche =
-        !recherche ||
-        p.nom.toLowerCase().includes(recherche.toLowerCase()) ||
-        p.categorie.toLowerCase().includes(recherche.toLowerCase());
+      let correspondRecherche = true;
+      if (motsCles.length > 0) {
+        const nomNorm = normaliserTexte(p.nom);
+        const catNorm = normaliserTexte(p.categorie);
+        const refNorm = normaliserTexte(p.reference || p.code || '');
+        const idNorm = normaliserTexte(p.id);
+        const prixVenteNorm = normaliserTexte(p.prix_vente);
+        const prixAchatNorm = normaliserTexte(p.prix_achat);
+
+        const haystack = `${nomNorm} ${catNorm} ${refNorm} ${idNorm} ${prixVenteNorm} ${prixAchatNorm}`;
+        correspondRecherche = motsCles.every((mot) => haystack.includes(mot));
+      }
 
       const correspondCategorie =
-        categorieFiltre === 'toutes' || p.categorie.toLowerCase() === categorieFiltre.toLowerCase();
+        categorieFiltre === 'toutes' ||
+        normaliserTexte(p.categorie) === normaliserTexte(categorieFiltre);
 
       const correspondRupture = !filtreRuptureSeulement || p.est_en_rupture_proche;
 
@@ -181,16 +258,41 @@ export const StockPage = () => {
           </p>
         </div>
 
-        <button 
-          onClick={() => !isEmploye && setModalNouveauProduit(true)}
-          className="btn btn-primary"
-          disabled={isEmploye}
-          title={isEmploye ? "Action réservée au Gérant" : "Ajouter un nouveau produit"}
-          style={isEmploye ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-        >
-          <Plus size={18} />
-          <span>Nouveau Produit</span>
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* BOUTON CAISSE MULTI-ARTICLES (GÉRANT & EMPLOYÉS) */}
+          <button
+            onClick={() => setModalPanier(true)}
+            className="btn btn-gold"
+            title="Encaisser plusieurs articles sur un seul et même reçu"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '700' }}
+          >
+            <ShoppingCart size={18} />
+            <span>Caisse Multi-Articles</span>
+            {panierArticles.length > 0 && (
+              <span style={{
+                background: '#991b1b',
+                color: '#fff',
+                borderRadius: '12px',
+                padding: '1px 7px',
+                fontSize: '0.75rem',
+                fontWeight: '800'
+              }}>
+                {panierArticles.length}
+              </span>
+            )}
+          </button>
+
+          <button 
+            onClick={() => !isEmploye && setModalNouveauProduit(true)}
+            className="btn btn-primary"
+            disabled={isEmploye}
+            title={isEmploye ? "Action réservée au Gérant" : "Ajouter un nouveau produit"}
+            style={isEmploye ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+          >
+            <Plus size={18} />
+            <span>Nouveau Produit</span>
+          </button>
+        </div>
       </div>
 
       {/* BANDEAU MODE EMPLOYÉ SI CONNECTÉ COMME EMPLOYÉ */}
@@ -277,16 +379,44 @@ export const StockPage = () => {
       <div className="card" style={{ marginBottom: '20px', padding: '16px' }}>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ position: 'relative', flex: '1 1 240px' }}>
-            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
+            <Search size={18} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)', pointerEvents: 'none' }} />
             <input
               type="text"
-              placeholder="Rechercher un produit ou une catégorie..."
+              placeholder="Rechercher par nom, rayon, référence ou prix..."
               className="form-input"
-              style={{ paddingLeft: '38px' }}
+              style={{ paddingLeft: '38px', paddingRight: recherche ? '36px' : '14px' }}
               value={recherche}
               onChange={(e) => setRecherche(e.target.value)}
             />
+            {recherche && (
+              <button
+                type="button"
+                onClick={() => setRecherche('')}
+                style={{
+                  position: 'absolute',
+                  right: '10px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+                title="Effacer la recherche"
+              >
+                <X size={16} />
+              </button>
+            )}
           </div>
+
+          {recherche.trim() && (
+            <span style={{ fontSize: '0.82rem', color: 'var(--primary-800)', fontWeight: '700', background: 'var(--primary-50)', padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--primary-200)' }}>
+              {produitsFiltres.length} résultat{produitsFiltres.length > 1 ? 's' : ''} trouvé{produitsFiltres.length > 1 ? 's' : ''}
+            </span>
+          )}
 
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
             {/* Filtre Rupture Proche */}
@@ -475,10 +605,21 @@ export const StockPage = () => {
                     </button>
 
                     <button
+                      onClick={() => handleAjouterAuPanier(p)}
+                      className="btn btn-outline btn-sm"
+                      disabled={p.quantite_stock <= 0}
+                      title={p.quantite_stock <= 0 ? "Stock épuisé" : "Ajouter cet article au ticket multi-articles"}
+                      style={{ padding: '8px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <ShoppingCart size={15} />
+                      <span>+ Panier</span>
+                    </button>
+
+                    <button
                       onClick={() => setProduitPourVente(p)}
                       className="btn btn-gold btn-sm"
                       disabled={p.quantite_stock <= 0}
-                      title={p.quantite_stock <= 0 ? "Stock épuisé" : "Encaisser une vente (−)"}
+                      title={p.quantite_stock <= 0 ? "Stock épuisé" : "Encaisser une vente directe (−)"}
                       style={{ padding: '8px 10px' }}
                     >
                       <Minus size={16} />
@@ -526,7 +667,82 @@ export const StockPage = () => {
         </div>
       )}
 
-      {/* MODALES D'ACTIONS */}
+      {/* BANDEAU FLOTTANT DU PANIER EN COURS */}
+      {panierArticles.length > 0 && (
+        <div style={{
+          position: 'fixed',
+          bottom: '20px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '92%',
+          maxWidth: '620px',
+          background: 'linear-gradient(135deg, #09372b, #0f5441)',
+          color: '#ffffff',
+          padding: '12px 18px',
+          borderRadius: 'var(--radius-lg)',
+          boxShadow: '0 12px 35px rgba(0,0,0,0.3)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          zIndex: 900,
+          border: '1.5px solid #108e6c',
+          animation: 'fadeIn 0.25s ease'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              background: '#ffd56b',
+              color: '#09372b',
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: '800',
+              fontSize: '0.92rem'
+            }}>
+              {panierArticles.length}
+            </div>
+            <div>
+              <div style={{ fontWeight: '700', fontSize: '0.92rem' }}>
+                Ticket multi-articles : {panierArticles.length} article(s)
+              </div>
+              <div style={{ fontSize: '0.78rem', color: '#a7f3d0' }}>
+                Total : {totalPanier.toLocaleString('fr-FR')} FCFA
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => setPanierArticles([])}
+              className="btn btn-outline btn-sm"
+              style={{ color: '#fca5a5', borderColor: 'rgba(252, 165, 165, 0.4)', padding: '6px 10px', fontSize: '0.8rem' }}
+            >
+              Vider
+            </button>
+            <button
+              onClick={() => setModalPanier(true)}
+              className="btn btn-gold btn-sm"
+              style={{ fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 14px' }}
+            >
+              <Receipt size={16} />
+              <span>Ouvrir caisse & reçu</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODALE CAISSE MULTI-ARTICLES */}
+      {modalPanier && (
+        <ModalPanierVente
+          produitsCatalogue={produits}
+          panierInitial={panierArticles}
+          onClose={() => setModalPanier(false)}
+          onSuccess={handleSuccesPanier}
+        />
+      )}
+
+      {/* MODALES D'ACTIONS MONO-PRODUIT */}
       {produitPourAchat && (
         <ModalAchat
           produit={produitPourAchat}
@@ -540,6 +756,7 @@ export const StockPage = () => {
           produit={produitPourVente}
           onClose={() => setProduitPourVente(null)}
           onSuccess={handleSuccesVente}
+          onAjouterAuPanier={handleAjouterAuPanier}
         />
       )}
 
@@ -558,7 +775,7 @@ export const StockPage = () => {
         />
       )}
 
-      {/* MODALE DU REÇU IMPRIMABLE (AFFICHÉE IMMÉDIATEMENT APRÈS LA VENTE) */}
+      {/* MODALE DU REÇU IMPRIMABLE / TÉLÉCHARGEABLE */}
       {recuVente && (
         <RecuVente
           recu={recuVente}

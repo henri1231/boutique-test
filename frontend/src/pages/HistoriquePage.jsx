@@ -48,6 +48,18 @@ export const HistoriquePage = () => {
     }
   };
 
+  const handleVoirRecuAchat = async (achatId) => {
+    setLoadingRecuId(achatId);
+    try {
+      const recu = await api.achats.getRecu(achatId);
+      setRecuSelectionne(recu);
+    } catch (err) {
+      alert("Erreur lors de la récupération du reçu d'achat : " + (err.message || 'Introuvable'));
+    } finally {
+      setLoadingRecuId(null);
+    }
+  };
+
   // Fusionner et trier chronologiquement
   const items = [
     ...(mouvements.achats || []).map((a) => ({ ...a, type_mvt: 'achat' })),
@@ -176,19 +188,17 @@ export const HistoriquePage = () => {
                     </div>
                   </div>
 
-                  {/* Bouton Voir / Imprimer le Reçu si c'est une Vente */}
-                  {isVente && (
-                    <button
-                      onClick={() => handleVoirRecu(item.id)}
-                      disabled={loadingRecuId === item.id}
-                      className="btn btn-outline btn-sm"
-                      title="Afficher et réimprimer le reçu de cette vente"
-                      style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 10px', fontSize: '0.8rem' }}
-                    >
-                      <Printer size={14} />
-                      <span>{loadingRecuId === item.id ? "..." : "Reçu"}</span>
-                    </button>
-                  )}
+                  {/* Bouton Voir / Enregistrer le Reçu (Vente ou Achat) */}
+                  <button
+                    onClick={() => isVente ? handleVoirRecu(item.id) : handleVoirRecuAchat(item.id)}
+                    disabled={loadingRecuId === item.id}
+                    className="btn btn-outline btn-sm"
+                    title={isVente ? "Afficher, imprimer et enregistrer le reçu de vente" : "Afficher, imprimer et enregistrer le bon d'achat"}
+                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 10px', fontSize: '0.8rem' }}
+                  >
+                    <Printer size={14} />
+                    <span>{loadingRecuId === item.id ? "..." : (isVente ? "Reçu" : "Bon d'achat")}</span>
+                  </button>
                 </div>
               </div>
             );

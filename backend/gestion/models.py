@@ -156,6 +156,7 @@ class Achat(models.Model):
     quantite = models.PositiveIntegerField(verbose_name="Quantité achetée")
     prix_unitaire = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Prix unitaire d'achat (FCFA)")
     fournisseur = models.CharField(max_length=200, blank=True, default='', verbose_name="Fournisseur")
+    numero_recu = models.CharField(max_length=60, blank=True, default='', db_index=True, verbose_name="Numéro de bon / reçu")
     date = models.DateTimeField(auto_now_add=True, verbose_name="Date d'achat")
 
     class Meta:
@@ -194,6 +195,7 @@ class Vente(models.Model):
         related_name='ventes',
         verbose_name="Vendeur / Enregistré par"
     )
+    numero_recu = models.CharField(max_length=60, blank=True, default='', db_index=True, verbose_name="Numéro de reçu")
     date = models.DateTimeField(auto_now_add=True, verbose_name="Date de vente")
 
     class Meta:

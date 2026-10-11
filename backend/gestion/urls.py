@@ -9,7 +9,7 @@ try:
         abonnement_statut, abonnement_payer, abonnement_payer_flooz, abonnement_payer_tmoney,
         abonnement_confirmer, abonnement_simuler_expiration,
         historique_mouvements, statistiques_boutique, resume_financier,
-        recu_vente, employes_view,
+        recu_vente, panier_vente, recu_achat, employes_view,
         AdminConnexionView, admin_statistiques_globales, AdminBoutiqueViewSet,
         admin_modifier_utilisateur, admin_journal_actions, superadmin_mon_compte,
         AdminAdministrateurViewSet, MessageBoutiqueViewSet
@@ -21,7 +21,7 @@ except (ImportError, ModuleNotFoundError):
         abonnement_statut, abonnement_payer, abonnement_payer_flooz, abonnement_payer_tmoney,
         abonnement_confirmer, abonnement_simuler_expiration,
         historique_mouvements, statistiques_boutique, resume_financier,
-        recu_vente, employes_view,
+        recu_vente, panier_vente, recu_achat, employes_view,
         AdminConnexionView, admin_statistiques_globales, AdminBoutiqueViewSet,
         admin_modifier_utilisateur, admin_journal_actions, superadmin_mon_compte,
         AdminAdministrateurViewSet, MessageBoutiqueViewSet
@@ -50,8 +50,10 @@ urlpatterns = [
     path('superadmin/mon-compte/', superadmin_mon_compte, name='superadmin_mon_compte'),
     path('admin-plateforme/mon-compte/', superadmin_mon_compte, name='admin_plateforme_mon_compte'),
 
-    # Reçu de vente client
+    # Vente panier multi-articles et Reçus
+    path('ventes/panier/', panier_vente, name='panier_vente'),
     path('ventes/<int:pk>/recu/', recu_vente, name='recu_vente'),
+    path('achats/<int:pk>/recu/', recu_achat, name='recu_achat'),
 
     # Abonnement Mobile Money (TMoney & Flooz - 5000 FCFA / 3 mois)
     path('abonnement/statut/', abonnement_statut, name='abonnement_statut'),
